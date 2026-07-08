@@ -3352,6 +3352,166 @@ export const seedCatalog = {
       "departmentCode": "СМ",
       "isCore": true,
       "isFrequentPublicBuilding": true
+    },
+    {
+      "number": 43,
+      "mark": "ЭФ",
+      "name": "Фасадное освещение",
+      "departmentCode": "ЭФ",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 44,
+      "mark": "ЭН",
+      "name": "Наружное электроосвещение",
+      "departmentCode": "ЭН",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 45,
+      "mark": "ЭС",
+      "name": "Наружные сети электроснабжения",
+      "departmentCode": "ЭС",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 46,
+      "mark": "ЭГ",
+      "name": "Резервное электроснабжение / дизель-генераторная",
+      "departmentCode": "ЭГ",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 47,
+      "mark": "ЗМ",
+      "name": "Заземление и молниезащита",
+      "departmentCode": "ЗМ",
+      "isCore": false,
+      "isFrequentPublicBuilding": true
+    },
+    {
+      "number": 48,
+      "mark": "НВ",
+      "name": "Наружные сети водоснабжения",
+      "departmentCode": "НВ",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 49,
+      "mark": "НК",
+      "name": "Наружные сети канализации",
+      "departmentCode": "НК",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 50,
+      "mark": "НКЛ",
+      "name": "Наружные сети ливневой канализации",
+      "departmentCode": "НКЛ",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 51,
+      "mark": "ДР",
+      "name": "Дренажные системы",
+      "departmentCode": "ДР",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 52,
+      "mark": "ЛОС",
+      "name": "Локальные очистные сооружения / очистка поверхностного стока",
+      "departmentCode": "ЛОС",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 53,
+      "mark": "ТС",
+      "name": "Наружные тепловые сети",
+      "departmentCode": "ТС",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 54,
+      "mark": "АВК",
+      "name": "Автоматизация систем водоснабжения и канализации",
+      "departmentCode": "АВК",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 55,
+      "mark": "Wi-Fi",
+      "name": "Беспроводная сеть Wi-Fi",
+      "departmentCode": "Wi-Fi",
+      "isCore": false,
+      "isFrequentPublicBuilding": true
+    },
+    {
+      "number": 56,
+      "mark": "ТВ",
+      "name": "Телевидение / IPTV",
+      "departmentCode": "ТВ",
+      "isCore": false,
+      "isFrequentPublicBuilding": true
+    },
+    {
+      "number": 57,
+      "mark": "НСС",
+      "name": "Наружные сети связи",
+      "departmentCode": "НСС",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 58,
+      "mark": "ВП",
+      "name": "Водоподготовка бассейна",
+      "departmentCode": "ВП",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 59,
+      "mark": "ПРК",
+      "name": "Парковочная система / шлагбаумы / въезды",
+      "departmentCode": "ПРК",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 60,
+      "mark": "ЭЗС",
+      "name": "Зарядные станции электромобилей",
+      "departmentCode": "ЭЗС",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
+    },
+    {
+      "number": 61,
+      "mark": "ЛФ",
+      "name": "Лифты и подъемники",
+      "departmentCode": "ЛФ",
+      "isCore": false,
+      "isFrequentPublicBuilding": true
+    },
+    {
+      "number": 62,
+      "mark": "АДУ",
+      "name": "Автоматизация и диспетчеризация лифтов",
+      "departmentCode": "АДУ",
+      "isCore": false,
+      "isFrequentPublicBuilding": false
     }
   ],
   "pp87Reference": [

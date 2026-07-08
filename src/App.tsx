@@ -104,6 +104,10 @@ const getDefaultStageDuration = (stage: string, lines: EstimateLine[]) => {
 const normalizeCatalog = (catalog: Catalog): Catalog => {
   const seed = seedToCatalog(seedCatalog);
   const rateMap = new Map(catalog.rates.map((rate) => [rate.code, rate]));
+  const rdReferenceMap = new Map(seed.rdReference.map((item) => [item.mark, item]));
+  catalog.rdReference?.forEach((item) => rdReferenceMap.set(item.mark, item));
+  const pp87ReferenceMap = new Map(seed.pp87Reference.map((item) => [`${item.type}:${item.number}:${item.mark ?? ""}`, item]));
+  catalog.pp87Reference?.forEach((item) => pp87ReferenceMap.set(`${item.type}:${item.number}:${item.mark ?? ""}`, item));
   seed.rates.forEach((seedRate) => {
     const currentRate = rateMap.get(seedRate.code);
     if (!currentRate) {
@@ -119,8 +123,8 @@ const normalizeCatalog = (catalog: Catalog): Catalog => {
     ...seed,
     ...catalog,
     rates: Array.from(rateMap.values()),
-    rdReference: catalog.rdReference?.length ? catalog.rdReference : seed.rdReference,
-    pp87Reference: catalog.pp87Reference?.length ? catalog.pp87Reference : seed.pp87Reference,
+    rdReference: Array.from(rdReferenceMap.values()),
+    pp87Reference: Array.from(pp87ReferenceMap.values()),
     presetSets: catalog.presetSets?.length ? catalog.presetSets : seed.presetSets,
     lines: catalog.lines.map((line) => {
       const isPp87Section5Header =

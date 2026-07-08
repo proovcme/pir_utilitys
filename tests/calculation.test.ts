@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedCatalog } from "../src/data/seedCatalog";
-import { calculateEstimate, seedToCatalog } from "../src/domain/calculation";
+import { calculateEstimate, getRateGroupCode, seedToCatalog } from "../src/domain/calculation";
 
 describe("calculateEstimate", () => {
   it("matches the source workbook totals with default computer depreciation", () => {
@@ -145,5 +145,21 @@ describe("calculateEstimate", () => {
     expect(result.sbc.currentPriceWithVat).toBe(5_246_000);
     expect(result.sbc.normativeDurationDays).toBe(90);
     expect(result.sbc.differenceWithoutVat).toBe(-210_342.11);
+  });
+
+  it("contains the expanded RD engineering marks and maps them to rate groups", () => {
+    const expectedMarks = [
+      "ЭФ", "ЭН", "ЭОМ", "ЭС", "ЭГ", "АСКУЭ", "ЗМ", "ВК", "ВПВ", "НВ", "АСКУВ", "НК",
+      "НКЛ", "ДР", "ЛОС", "ОВ", "ОВ.ДУ", "ХС", "ИТП", "ТС", "АСКУТ", "АОВ", "АИТП",
+      "АВК", "ДИСП", "BMS", "СС", "СКС", "ЛВС", "Wi-Fi", "ТФ", "ТВ", "РТ", "ЧФ",
+      "НСС", "СКУД", "СОТ", "ОС", "ПС", "СОУЭ", "АУПТ", "ВП", "ПРК", "ЭЗС", "ЛФ", "АДУ",
+    ];
+    const referenceByMark = new Map(seedCatalog.rdReference.map((item) => [item.mark, item]));
+
+    expectedMarks.forEach((mark) => {
+      const reference = referenceByMark.get(mark);
+      expect(reference, `Нет марки ${mark} в базе РД`).toBeDefined();
+      expect(getRateGroupCode(reference?.departmentCode), `Нет группы ставок для ${mark}`).toBeTruthy();
+    });
   });
 });
