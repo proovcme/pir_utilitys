@@ -12,12 +12,18 @@ export type PrikinatorWorkScenario = {
   hint: string;
   coefficient: number;
   note: string;
+  source: string;
+  official: boolean;
 };
 
 export type PrikinatorRegion = {
   id: string;
   label: string;
   coefficient: number;
+  source: string;
+  period: string;
+  method: string;
+  official: boolean;
 };
 
 export type NcsCapacityCalculation = {
@@ -56,6 +62,8 @@ export const prikinatorWorks: PrikinatorWorkScenario[] = [
     hint: "базовый сценарий",
     coefficient: 1,
     note: "Без сценарной поправки интерфейса.",
+    source: "Базовый сценарий интерфейса: выбранная строка НЦС считается без дополнительной поправки.",
+    official: false,
   },
   {
     id: "reconstruction",
@@ -63,6 +71,8 @@ export const prikinatorWorks: PrikinatorWorkScenario[] = [
     hint: "объект уже с характером",
     coefficient: 1.15,
     note: "Демо-поправка интерфейса. Для реального расчета нужен отдельный выбор нормативной базы и состава работ.",
+    source: "Внутреннее допущение демо, не норматив НЦС.",
+    official: false,
   },
   {
     id: "overhaul",
@@ -70,6 +80,8 @@ export const prikinatorWorks: PrikinatorWorkScenario[] = [
     hint: "нужна дефектовка",
     coefficient: 0.7,
     note: "Демо-поправка интерфейса. Капремонт нельзя честно посчитать без ведомости дефектов и объемов.",
+    source: "Внутреннее допущение демо до дефектовки и ведомости объемов.",
+    official: false,
   },
   {
     id: "modernization",
@@ -77,19 +89,93 @@ export const prikinatorWorks: PrikinatorWorkScenario[] = [
     hint: "оборудование отдельно",
     coefficient: 0.55,
     note: "Демо-поправка интерфейса. Стоимость оборудования и специальные работы требуют отдельной детализации.",
+    source: "Внутреннее допущение демо до состава оборудования и специальных работ.",
+    official: false,
   },
 ];
 
 export const prikinatorRegions: PrikinatorRegion[] = [
-  { id: "mo", label: "Московская область / базовый район", coefficient: 1 },
-  { id: "moscow", label: "Москва", coefficient: 1.02 },
-  { id: "spb", label: "Санкт-Петербург", coefficient: 1 },
-  { id: "tatarstan", label: "Татарстан", coefficient: 0.81 },
-  { id: "ural", label: "Свердловская область", coefficient: 0.94 },
-  { id: "south", label: "Краснодарский край", coefficient: 0.84 },
-  { id: "khmao", label: "ХМАО", coefficient: 1.12 },
-  { id: "yanao", label: "ЯНАО", coefficient: 1.44 },
-  { id: "sakha", label: "Якутия", coefficient: 1.6 },
+  {
+    id: "mo",
+    label: "Московская область / базовый район",
+    coefficient: 1,
+    source: "Базовый район НЦС",
+    period: "НЦС-2026, цены на 01.01.2026",
+    method: "Без перехода: базовый район принят равным 1.",
+    official: false,
+  },
+  {
+    id: "moscow",
+    label: "Москва",
+    coefficient: 1.02,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "spb",
+    label: "Санкт-Петербург",
+    coefficient: 1,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "tatarstan",
+    label: "Татарстан",
+    coefficient: 0.81,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "ural",
+    label: "Свердловская область",
+    coefficient: 0.94,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "south",
+    label: "Краснодарский край",
+    coefficient: 0.84,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "khmao",
+    label: "ХМАО",
+    coefficient: 1.12,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "yanao",
+    label: "ЯНАО",
+    coefficient: 1.44,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
+  {
+    id: "sakha",
+    label: "Якутия",
+    coefficient: 1.6,
+    source: "Демо-коэффициент интерфейса",
+    period: "Учебный режим",
+    method: "Показывает место Кпер в формуле; заменить официальным значением.",
+    official: false,
+  },
 ];
 
 export function linesForObject(objectId: PrikinatorObjectId) {

@@ -38,21 +38,35 @@ function lineOptionText(line: PrikinatorNcsLine) {
   return `${line.code} - ${line.title}`;
 }
 
+function parseNumericDraft(value: string) {
+  const normalized = value.replace(/\s/g, "").replace(",", ".");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeNumericDraft(value: number) {
+  return String(value);
+}
+
 export function PrikinatorStandalone() {
   const [objectId, setObjectId] = useState<PrikinatorObjectId>("office");
   const objectLines = useMemo(() => linesForObject(objectId), [objectId]);
   const [lineCode, setLineCode] = useState("02-01-001-03");
   const selectedLine = (objectLines.find((line) => line.code === lineCode) ?? objectLines[0]) as PrikinatorNcsLine;
   const [capacity, setCapacity] = useState(selectedLine?.baseCapacity ?? 0);
+  const [capacityDraft, setCapacityDraft] = useState(normalizeNumericDraft(selectedLine?.baseCapacity ?? 0));
   const [workId, setWorkId] = useState(prikinatorWorks[0].id);
   const [regionId, setRegionId] = useState("mo");
   const [vatRate, setVatRate] = useState(0.22);
+  const [vatRateDraft, setVatRateDraft] = useState("0.22");
 
   useEffect(() => {
     const nextLine = objectLines[0];
     if (nextLine && !objectLines.some((line) => line.code === lineCode)) {
       setLineCode(nextLine.code);
       setCapacity(nextLine.baseCapacity);
+      setCapacityDraft(normalizeNumericDraft(nextLine.baseCapacity));
     }
   }, [lineCode, objectLines]);
 
@@ -120,7 +134,10 @@ export function PrikinatorStandalone() {
                 onChange={(event) => {
                   const nextLine = objectLines.find((line) => line.code === event.target.value);
                   setLineCode(event.target.value);
-                  if (nextLine) setCapacity(nextLine.baseCapacity);
+                  if (nextLine) {
+                    setCapacity(nextLine.baseCapacity);
+                    setCapacityDraft(normalizeNumericDraft(nextLine.baseCapacity));
+                  }
                 }}
               >
                 {objectLines.map((line) => (
@@ -137,8 +154,14 @@ export function PrikinatorStandalone() {
                   type="number"
                   min={0}
                   step="1"
-                  value={capacity}
-                  onChange={(event) => setCapacity(Number(event.target.value))}
+                  value={capacityDraft}
+                  onChange={(event) => {
+                    const nextDraft = event.target.value;
+                    const parsed = parseNumericDraft(nextDraft);
+                    setCapacityDraft(nextDraft);
+                    if (parsed !== null) setCapacity(Math.max(0, parsed));
+                  }}
+                  onBlur={() => setCapacityDraft(normalizeNumericDraft(capacity))}
                 />
                 <b>{selectedLine.unit}</b>
               </div>
@@ -148,7 +171,7 @@ export function PrikinatorStandalone() {
               <select value={regionId} onChange={(event) => setRegionId(event.target.value)}>
                 {prikinatorRegions.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label} · {item.coefficient}
+                    {item.label} · {item.coefficient} · {item.source}
                   </option>
                 ))}
               </select>
@@ -160,8 +183,14 @@ export function PrikinatorStandalone() {
                   type="number"
                   min={0}
                   step="0.01"
-                  value={vatRate}
-                  onChange={(event) => setVatRate(Number(event.target.value))}
+                  value={vatRateDraft}
+                  onChange={(event) => {
+                    const nextDraft = event.target.value;
+                    const parsed = parseNumericDraft(nextDraft);
+                    setVatRateDraft(nextDraft);
+                    if (parsed !== null) setVatRate(Math.max(0, parsed));
+                  }}
+                  onBlur={() => setVatRateDraft(normalizeNumericDraft(vatRate))}
                 />
                 <b>{formatNumber(vatRate * 100)}%</b>
               </div>
@@ -170,8 +199,8 @@ export function PrikinatorStandalone() {
 
           <div className="method-note prikinator-note">
             <b>Кпер</b> здесь означает коэффициент перехода к региональному уровню цены. В демо он задан
-            справочно для интерфейса; в рабочем расчете его надо заменить официальным коэффициентом для
-            нужного региона, периода и условий.
+            справочно для интерфейса; в рабочем расчете его надо заменить официальным коэффициентом для нужного
+            региона, периода и условий. Текущий источник: {region.source}, {region.period}.
           </div>
         </div>
 
@@ -199,11 +228,11 @@ export function PrikinatorStandalone() {
                 </tr>
                 <tr>
                   <td>Сценарий</td>
-                  <td>{currency.format(result.scenarioCost)} · k={work.coefficient}</td>
+                  <td>{currency.format(result.scenarioCost)} · k={work.coefficient} · {work.source}</td>
                 </tr>
                 <tr>
                   <td>Регион</td>
-                  <td>{currency.format(result.regionalCost)} · Кпер={region.coefficient}</td>
+                  <td>{currency.format(result.regionalCost)} · Кпер={region.coefficient} · {region.source}</td>
                 </tr>
                 <tr>
                   <td>НДС</td>
@@ -227,7 +256,7 @@ export function PrikinatorStandalone() {
           </div>
 
           <div className="method-note prikinator-note compact">
-            {result.ncs.note} {work.note}
+            {result.ncs.note} {work.note} {region.method}
           </div>
         </aside>
       </div>
