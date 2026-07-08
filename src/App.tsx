@@ -15,6 +15,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import { PrikinatorStandalone } from "./components/PrikinatorStandalone";
 import { seedCatalog } from "./data/seedCatalog";
 import {
   calculateEstimate,
@@ -40,7 +41,7 @@ import { exportEstimateWorkbook, saveEstimateWorkbook } from "./services/excelEx
 import { exportRatesCsv, exportRatesXlsx, importRatesFile } from "./services/rateExchange";
 import { createStorageService } from "./services/storage";
 
-type View = "summary" | "estimate" | "configuration" | "rates" | "sbc" | "templates" | "history";
+type View = "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
 type EstimateFilters = {
   id: string;
   section: string;
@@ -1102,6 +1103,9 @@ export function App() {
           <button className={view === "sbc" ? "active" : ""} onClick={() => setView("sbc")}>
             <Calculator size={18} /> СБЦ
           </button>
+          <button className={view === "prikinator" ? "active" : ""} onClick={() => setView("prikinator")}>
+            <Calculator size={18} /> Прикинатор
+          </button>
           <button className={view === "templates" ? "active" : ""} onClick={() => setView("templates")}>
             <FolderOpen size={18} /> Шаблоны
           </button>
@@ -1131,6 +1135,7 @@ export function App() {
               {view === "configuration" && "Конфигурация разделов"}
               {view === "rates" && "Ставки и справочники"}
               {view === "sbc" && "Расчет по СБЦ"}
+              {view === "prikinator" && "Прикинатор НЦС"}
               {view === "templates" && "Шаблоны"}
               {view === "history" && "История расчетов"}
             </h1>
@@ -1145,7 +1150,7 @@ export function App() {
                 <Calculator size={18} /> Рассчитать
               </button>
             </div>
-          ) : (
+          ) : view === "prikinator" ? null : (
             <button className="ghost" onClick={resetToSeed}>
               <RotateCcw size={18} /> Сбросить
             </button>
@@ -1806,6 +1811,8 @@ export function App() {
             </section>
           </section>
         ) : null}
+
+        {view === "prikinator" ? <PrikinatorStandalone /> : null}
 
         {view === "templates" ? (
           <section className="panel full">
