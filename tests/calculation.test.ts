@@ -95,4 +95,44 @@ describe("calculateEstimate", () => {
     expect(result.totals.warningCount).toBe(1);
     expect(result.warnings[0]).toContain("Нет ставки");
   });
+
+  it("pays remaining cash flow by PD and RD acceptance stages", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      includeCommon: false,
+      presetPdOks: true,
+      presetRdCore: true,
+      workStartMonth: "2026-07",
+      workEndMonth: "2026-10",
+      advanceRate: 0.3,
+    };
+    const result = calculateEstimate(project, catalog);
+
+    expect(result.finance.cashFlow).toHaveLength(4);
+    expect(result.groupBreakdown.some((group) => group.group === "ПД")).toBe(true);
+    expect(result.groupBreakdown.some((group) => group.group === "РД")).toBe(true);
+    expect(result.finance.cashFlow[0].revenue).toBe(result.finance.advanceAmount);
+    expect(result.finance.cashFlow[1].revenue).toBeGreaterThan(0);
+    expect(result.finance.cashFlow[3].revenue).toBeGreaterThan(0);
+  });
+
+  it("pays all remaining cash flow at the end when only one stage is active", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      includeCommon: false,
+      presetPdOks: true,
+      presetRdCore: false,
+      workStartMonth: "2026-07",
+      workEndMonth: "2026-09",
+      advanceRate: 0.3,
+    };
+    const result = calculateEstimate(project, catalog);
+
+    expect(result.finance.cashFlow).toHaveLength(3);
+    expect(result.finance.cashFlow[0].revenue).toBe(result.finance.advanceAmount);
+    expect(result.finance.cashFlow[1].revenue).toBe(0);
+    expect(result.finance.cashFlow[2].revenue).toBe(result.finance.remainingAmount);
+  });
 });

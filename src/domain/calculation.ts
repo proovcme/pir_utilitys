@@ -1,8 +1,11 @@
 import type {
   CalculatedLine,
+  CashFlowRow,
   Catalog,
   EstimateLine,
   EstimateResult,
+  EstimateTotals,
+  FinanceSummary,
   ProjectInput,
   RateGroup,
 } from "./types";
@@ -122,6 +125,88 @@ export function calculateMonthlyDepreciation(project: ProjectInput) {
   const salvageValue = project.computerSalvageValue ?? 0;
   if (usefulLifeYears <= 0) return 0;
   return Math.max(0, computerCost - salvageValue) / usefulLifeYears / 12;
+}
+
+const parseProjectMonth = (value: string | null | undefined) => {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  return { year, month };
+};
+
+export function buildProjectMonths(startValue: string | null | undefined, endValue: string | null | undefined) {
+  const start = parseProjectMonth(startValue);
+  const end = parseProjectMonth(endValue);
+  if (!start || !end) return [];
+  const startIndex = start.year * 12 + start.month - 1;
+  const endIndex = end.year * 12 + end.month - 1;
+  if (endIndex < startIndex) return [];
+
+  return Array.from({ length: endIndex - startIndex + 1 }, (_, index) => {
+    const absoluteMonth = startIndex + index;
+    const year = Math.floor(absoluteMonth / 12);
+    const month = (absoluteMonth % 12) + 1;
+    return `${year}-${String(month).padStart(2, "0")}`;
+  });
+}
+
+export function calculateFinanceSummary(
+  project: ProjectInput,
+  totals: EstimateTotals,
+  groupBreakdown: EstimateResult["groupBreakdown"],
+): FinanceSummary {
+  const months = buildProjectMonths(project.workStartMonth, project.workEndMonth);
+  const workMonths = Math.max(1, months.length);
+  const displayMonths = months.length ? months : [project.workStartMonth || "Месяц 1"];
+  const advanceAmount = roundMoney(totals.totalWithVat * (project.advanceRate ?? 0));
+  const remainingAmount = roundMoney(Math.max(0, totals.totalWithVat - advanceAmount));
+  const bankGuaranteeAmount = advanceAmount;
+  const bankGuaranteeCost = roundMoney(bankGuaranteeAmount * (project.bankGuaranteeAnnualRate ?? 0.03) * (workMonths / 12));
+  const monthlyCost = totals.totalWithOverhead / workMonths;
+  const pdStage = groupBreakdown.find((group) => group.group === "ПД");
+  const rdStage = groupBreakdown.find((group) => group.group === "РД");
+  const hasPdAndRd = Boolean(pdStage && rdStage);
+  const pdPaymentIndex = Math.max(0, Math.min(workMonths - 1, Math.ceil(workMonths / 2) - 1));
+  const finalPaymentIndex = workMonths - 1;
+  const stagedRevenue = new Map<number, number>();
+
+  if (hasPdAndRd && pdStage && rdStage) {
+    const pdAndRdTotal = pdStage.totalWithoutVat + rdStage.totalWithoutVat;
+    const pdShare = pdAndRdTotal > 0 ? pdStage.totalWithoutVat / pdAndRdTotal : 0.5;
+    const pdPayment = roundMoney(remainingAmount * pdShare);
+    stagedRevenue.set(pdPaymentIndex, (stagedRevenue.get(pdPaymentIndex) ?? 0) + pdPayment);
+    stagedRevenue.set(finalPaymentIndex, (stagedRevenue.get(finalPaymentIndex) ?? 0) + roundMoney(remainingAmount - pdPayment));
+  } else {
+    stagedRevenue.set(finalPaymentIndex, remainingAmount);
+  }
+
+  let cumulativeCashFlow = 0;
+  const cashFlow: CashFlowRow[] = displayMonths.map((month, index) => {
+    const revenue = roundMoney((stagedRevenue.get(index) ?? 0) + (index === 0 ? advanceAmount : 0));
+    const cost = roundMoney(monthlyCost);
+    const rowGuaranteeCost = index === 0 ? bankGuaranteeCost : 0;
+    const netCashFlow = roundMoney(revenue - cost - rowGuaranteeCost);
+    cumulativeCashFlow = roundMoney(cumulativeCashFlow + netCashFlow);
+    return {
+      month,
+      revenue,
+      cost,
+      bankGuaranteeCost: rowGuaranteeCost,
+      netCashFlow,
+      cumulativeCashFlow,
+    };
+  });
+
+  return {
+    advanceAmount,
+    remainingAmount,
+    bankGuaranteeAmount: roundMoney(bankGuaranteeAmount),
+    bankGuaranteeCost,
+    workMonths,
+    cashFlow,
+  };
 }
 
 export function calculateLine(
@@ -263,27 +348,30 @@ export function calculateEstimate(project: ProjectInput, catalog: Catalog): Esti
     };
   });
 
+  const totals = {
+    activeRows: activeLines.length,
+    directWorks: roundMoney(directWorks),
+    bufferAmount: roundMoney(bufferAmount),
+    totalWithBuffer: roundMoney(totalWithBuffer),
+    overheadAmount: roundMoney(overheadAmount),
+    totalWithOverhead: roundMoney(totalWithOverhead),
+    commercialMarkup: roundMoney(commercialMarkup),
+    totalWithoutVat: roundMoney(totalWithoutVat),
+    vatAmount: roundMoney(vatAmount),
+    totalWithVat: roundMoney(totalWithVat),
+    costWithoutVatPerSquareMeter: roundMoney(project.area > 0 ? totalWithoutVat / project.area : 0),
+    costWithVatPerSquareMeter: roundMoney(project.area > 0 ? totalWithVat / project.area : 0),
+    warningCount: warningLines.length,
+    personDays: roundMoney(personDays),
+  };
+
   return {
     project,
     catalogVersion: catalog.version,
     lines,
     activeLines,
-    totals: {
-      activeRows: activeLines.length,
-      directWorks: roundMoney(directWorks),
-      bufferAmount: roundMoney(bufferAmount),
-      totalWithBuffer: roundMoney(totalWithBuffer),
-      overheadAmount: roundMoney(overheadAmount),
-      totalWithOverhead: roundMoney(totalWithOverhead),
-      commercialMarkup: roundMoney(commercialMarkup),
-      totalWithoutVat: roundMoney(totalWithoutVat),
-      vatAmount: roundMoney(vatAmount),
-      totalWithVat: roundMoney(totalWithVat),
-      costWithoutVatPerSquareMeter: roundMoney(project.area > 0 ? totalWithoutVat / project.area : 0),
-      costWithVatPerSquareMeter: roundMoney(project.area > 0 ? totalWithVat / project.area : 0),
-      warningCount: warningLines.length,
-      personDays: roundMoney(personDays),
-    },
+    totals,
+    finance: calculateFinanceSummary(project, totals, groupBreakdown),
     bySource,
     byGroup,
     groupBreakdown,

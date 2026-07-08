@@ -265,6 +265,23 @@ function TextField({
   );
 }
 
+function MonthField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input type="month" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
 function Toggle({
   label,
   checked,
@@ -341,10 +358,6 @@ export function App() {
 
   const result = useMemo(() => calculateEstimate(project, catalog), [project, catalog]);
   const monthlyDepreciation = useMemo(() => calculateMonthlyDepreciation(project), [project]);
-  const sources = useMemo(() => {
-    const values = catalog.lines.map((line) => line.source).filter((value): value is string => Boolean(value));
-    return ["Все", ...Array.from(new Set(values))];
-  }, [catalog.lines]);
   const costGroups = useMemo(() => {
     const values = catalog.lines.map(resolveCostGroup);
     return Array.from(new Set([...defaultCostGroups, ...values]));
@@ -375,7 +388,7 @@ export function App() {
         view !== "estimate" ||
         line.active ||
         result.lines.some((child) => child.id.startsWith(`${line.id}.`) && child.active);
-      const sourceOk = view !== "configuration" || sourceFilter === "Все" || line.source === sourceFilter;
+      const sourceOk = view !== "configuration" || sourceFilter === "Все" || resolveCostGroup(line) === sourceFilter;
       const queryOk =
         !q ||
         [line.id, line.source, line.category, line.section, line.name, getRateGroupCode(line.departmentCode), line.comment]
@@ -1158,6 +1171,8 @@ export function App() {
               <StatCard label="Активных строк" value={String(result.totals.activeRows)} />
               <StatCard label="Человекодни" value={String(result.totals.personDays)} />
               <StatCard label="Амортизация в месяц" value={compactCurrency.format(monthlyDepreciation)} />
+              <StatCard label="Аванс" value={currency.format(result.finance.advanceAmount)} />
+              <StatCard label="Банковская гарантия" value={currency.format(result.finance.bankGuaranteeCost)} />
             </section>
 
             {result.warnings.length ? (
@@ -1234,6 +1249,50 @@ export function App() {
                 <NumberField label="Ликвидационная стоимость" value={project.computerSalvageValue} min={0} step={1000} onChange={(value) => updateProject("computerSalvageValue", value)} suffix="₽" />
                 <NumberField label="СПИ" value={project.computerUsefulLifeYears} min={0} step={0.5} onChange={(value) => updateProject("computerUsefulLifeYears", value)} suffix="лет" />
                 <NumberField label="Страховые взносы" value={project.insuranceContributionRate} min={0} step={0.001} onChange={(value) => updateProject("insuranceContributionRate", value)} suffix={formatPercent(project.insuranceContributionRate)} />
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-heading">
+                <h2>Финансы и ДДС</h2>
+              </div>
+              <div className="form-grid">
+                <NumberField label="Авансирование" value={project.advanceRate} min={0} step={0.01} onChange={(value) => updateProject("advanceRate", value)} suffix={formatPercent(project.advanceRate)} />
+                <MonthField label="Начало работ" value={project.workStartMonth} onChange={(value) => updateProject("workStartMonth", value)} />
+                <MonthField label="Окончание работ" value={project.workEndMonth} onChange={(value) => updateProject("workEndMonth", value)} />
+                <NumberField label="Ставка БГ годовая" value={project.bankGuaranteeAnnualRate} min={0} step={0.001} onChange={(value) => updateProject("bankGuaranteeAnnualRate", value)} suffix={formatPercent(project.bankGuaranteeAnnualRate)} />
+              </div>
+              <div className="finance-cards">
+                <StatCard label="Сумма аванса" value={currency.format(result.finance.advanceAmount)} />
+                <StatCard label="Остаток оплаты" value={currency.format(result.finance.remainingAmount)} />
+                <StatCard label="Сумма БГ" value={currency.format(result.finance.bankGuaranteeAmount)} />
+                <StatCard label="Срок БГ" value={`${result.finance.workMonths} мес.`} />
+              </div>
+              <div className="group-summary-table cashflow-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Месяц</th>
+                      <th>Поступления</th>
+                      <th>Расходы</th>
+                      <th>БГ</th>
+                      <th>ДДС</th>
+                      <th>Накопительно</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.finance.cashFlow.map((row) => (
+                      <tr key={row.month}>
+                        <td>{row.month}</td>
+                        <td>{currency.format(row.revenue)}</td>
+                        <td>{currency.format(row.cost)}</td>
+                        <td>{currency.format(row.bankGuaranteeCost)}</td>
+                        <td className={row.netCashFlow < 0 ? "negative-value" : "positive-value"}>{currency.format(row.netCashFlow)}</td>
+                        <td className={row.cumulativeCashFlow < 0 ? "negative-value" : "positive-value"}>{currency.format(row.cumulativeCashFlow)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           </div>
@@ -1468,7 +1527,7 @@ export function App() {
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Поиск по разделам" />
               </div>
               <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-                {sources.map((source) => (
+                {["Все", ...costGroups].map((source) => (
                   <option key={source}>{source}</option>
                 ))}
               </select>
@@ -1518,7 +1577,6 @@ export function App() {
                         onChange={(event) => toggleVisibleConfigLines(event.target.checked)}
                       />
                     </th>
-                    <th>Источник</th>
                     <th>Группа затрат</th>
                       <th>Категория</th>
                       <th>Раздел / марка</th>
@@ -1539,7 +1597,6 @@ export function App() {
                           onChange={(event) => toggleConfigLine(line.id, event.target.checked)}
                         />
                       </td>
-                      <td><input value={line.source ?? ""} onChange={(event) => updateLine(line.id, { source: event.target.value || null })} /></td>
                       <td>
                         <input
                           list="cost-groups"

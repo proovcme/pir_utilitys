@@ -9,6 +9,10 @@ export interface ProjectInput {
   commercialCoefficient: number;
   overheadRate: number;
   bufferRate: number;
+  advanceRate: number;
+  workStartMonth: string;
+  workEndMonth: string;
+  bankGuaranteeAnnualRate: number;
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -144,12 +148,31 @@ export interface EstimateTotals {
   personDays: number;
 }
 
+export interface CashFlowRow {
+  month: string;
+  revenue: number;
+  cost: number;
+  bankGuaranteeCost: number;
+  netCashFlow: number;
+  cumulativeCashFlow: number;
+}
+
+export interface FinanceSummary {
+  advanceAmount: number;
+  remainingAmount: number;
+  bankGuaranteeAmount: number;
+  bankGuaranteeCost: number;
+  workMonths: number;
+  cashFlow: CashFlowRow[];
+}
+
 export interface EstimateResult {
   project: ProjectInput;
   catalogVersion: number;
   lines: CalculatedLine[];
   activeLines: CalculatedLine[];
   totals: EstimateTotals;
+  finance: FinanceSummary;
   bySource: Record<string, number>;
   byGroup: Record<string, number>;
   groupBreakdown: Array<{

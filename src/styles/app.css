@@ -223,8 +223,8 @@ main {
 }
 
 .stat.accent {
-  border-color: #75c7bd;
-  background: #eefbf8;
+  border-color: #d79393;
+  background: #fff3f3;
 }
 
 .stat.warn {
@@ -990,6 +990,21 @@ td {
 .group-summary-table.prominent td:nth-child(2),
 .group-summary-table.prominent td:nth-child(3) {
   font-size: 16px;
+}
+
+.finance-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.cashflow-table {
+  overflow: auto;
+}
+
+.cashflow-table table {
+  min-width: 820px;
 }
 
 .total-row td {

@@ -64,6 +64,11 @@ export async function exportEstimateWorkbook(
 ): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   const exportRates = buildExportRates(snapshot);
+  const pdStage = snapshot.result.groupBreakdown.find((group) => group.group === "ПД");
+  const rdStage = snapshot.result.groupBreakdown.find((group) => group.group === "РД");
+  const hasPdAndRd = Boolean(pdStage && rdStage);
+  const pdAndRdTotal = (pdStage?.totalWithoutVat ?? 0) + (rdStage?.totalWithoutVat ?? 0);
+  const pdPaymentShare = hasPdAndRd && pdAndRdTotal > 0 ? (pdStage?.totalWithoutVat ?? 0) / pdAndRdTotal : 0.5;
   workbook.creator = "Калькулятор оценки проекта";
   workbook.created = new Date(snapshot.createdAt);
   workbook.modified = new Date();
@@ -117,6 +122,10 @@ export async function exportEstimateWorkbook(
     ["Итого с НДС, руб.", formula(`${quoteSheet("Пульт")}!B23`, snapshot.result.totals.totalWithVat)],
     ["Стоимость без НДС, руб./м²", formula(`${quoteSheet("Пульт")}!B24`, snapshot.result.totals.costWithoutVatPerSquareMeter)],
     ["Стоимость с НДС, руб./м²", formula(`${quoteSheet("Пульт")}!B25`, snapshot.result.totals.costWithVatPerSquareMeter)],
+    ["Аванс, руб.", formula(`${quoteSheet("Пульт")}!E21`, snapshot.result.finance.advanceAmount)],
+    ["Остаток оплаты, руб.", formula(`${quoteSheet("Пульт")}!E22`, snapshot.result.finance.remainingAmount)],
+    ["Сумма банковской гарантии, руб.", formula(`${quoteSheet("Пульт")}!E23`, snapshot.result.finance.bankGuaranteeAmount)],
+    ["Комиссия БГ, руб.", formula(`${quoteSheet("Пульт")}!E25`, snapshot.result.finance.bankGuaranteeCost)],
   ];
   const rowCount = Math.max(summaryRows.length, snapshot.result.groupBreakdown.length + 1);
   for (let index = 0; index < rowCount; index += 1) {
@@ -158,6 +167,27 @@ export async function exportEstimateWorkbook(
   summary.getCell("B5").numFmt = "#,##0.00";
   summary.getCell("B14").numFmt = '#,##0.00" ₽/м²"';
   summary.getCell("B15").numFmt = '#,##0.00" ₽/м²"';
+
+  const cashFlowHeaderRow = rowCount + 7;
+  summary.getCell(`A${cashFlowHeaderRow - 2}`).value = "ДДС";
+  styleTitle(summary.getCell(`A${cashFlowHeaderRow - 2}`));
+  summary.getRow(cashFlowHeaderRow).values = ["Месяц", "Поступления", "Расходы", "БГ", "ДДС", "Накопительно"];
+  styleHeader(summary.getRow(cashFlowHeaderRow));
+  snapshot.result.finance.cashFlow.forEach((row, index) => {
+    const rowNumber = cashFlowHeaderRow + index + 1;
+    const monthNumber = index + 1;
+    summary.getRow(rowNumber).values = [
+      row.month,
+      formula(`IF(${monthNumber}=1,${quoteSheet("Пульт")}!$E$21,0)+IF(${quoteSheet("Пульт")}!$E$29=1,IF(${monthNumber}=${quoteSheet("Пульт")}!$E$27,${quoteSheet("Пульт")}!$E$22*${quoteSheet("Пульт")}!$E$26,0)+IF(${monthNumber}=${quoteSheet("Пульт")}!$E$20,${quoteSheet("Пульт")}!$E$22*(1-${quoteSheet("Пульт")}!$E$26),0),IF(${monthNumber}=${quoteSheet("Пульт")}!$E$20,${quoteSheet("Пульт")}!$E$22,0))`, row.revenue),
+      formula(`${quoteSheet("Пульт")}!$E$28`, row.cost),
+      formula(index === 0 ? `${quoteSheet("Пульт")}!$E$25` : "0", row.bankGuaranteeCost),
+      formula(`B${rowNumber}-C${rowNumber}-D${rowNumber}`, row.netCashFlow),
+      formula(index === 0 ? `E${rowNumber}` : `F${rowNumber - 1}+E${rowNumber}`, row.cumulativeCashFlow),
+    ];
+  });
+  [2, 3, 4, 5, 6].forEach((column) => {
+    summary.getColumn(column).numFmt = rub;
+  });
 
   const control = workbook.addWorksheet("Пульт", {
     views: [{ showGridLines: false }],
@@ -221,6 +251,32 @@ export async function exportEstimateWorkbook(
   control.getCell("B26").value = formula(`SUMPRODUCT((${quoteSheet("Конструктор")}!R2:R${snapshot.catalog.lines.length + 1}=1)*(${quoteSheet("Конструктор")}!AF2:AF${snapshot.catalog.lines.length + 1}<>""))`, snapshot.result.totals.warningCount);
   control.getCell("B27").value = formula("B19*$E$14", snapshot.result.totals.overheadAmount);
   control.getCell("B28").value = formula(`SUMPRODUCT((${quoteSheet("Конструктор")}!R2:R${snapshot.catalog.lines.length + 1}=1)*(${quoteSheet("Конструктор")}!H2:H${snapshot.catalog.lines.length + 1}="ФОТ")*${quoteSheet("Конструктор")}!V2:V${snapshot.catalog.lines.length + 1}*(${quoteSheet("Конструктор")}!S2:S${snapshot.catalog.lines.length + 1}+${quoteSheet("Конструктор")}!T2:T${snapshot.catalog.lines.length + 1}+${quoteSheet("Конструктор")}!U2:U${snapshot.catalog.lines.length + 1}))`, snapshot.result.totals.personDays);
+  control.getCell("D17").value = "Авансирование";
+  control.getCell("E17").value = snapshot.project.advanceRate;
+  control.getCell("D18").value = "Начало работ";
+  control.getCell("E18").value = snapshot.project.workStartMonth;
+  control.getCell("D19").value = "Окончание работ";
+  control.getCell("E19").value = snapshot.project.workEndMonth;
+  control.getCell("D20").value = "Месяцев работ";
+  control.getCell("E20").value = snapshot.result.finance.workMonths;
+  control.getCell("D21").value = "Сумма аванса";
+  control.getCell("E21").value = formula("B23*E17", snapshot.result.finance.advanceAmount);
+  control.getCell("D22").value = "Остаток оплаты";
+  control.getCell("E22").value = formula("B23-E21", snapshot.result.finance.remainingAmount);
+  control.getCell("D23").value = "Сумма БГ";
+  control.getCell("E23").value = formula("E21", snapshot.result.finance.bankGuaranteeAmount);
+  control.getCell("D24").value = "Ставка БГ годовая";
+  control.getCell("E24").value = snapshot.project.bankGuaranteeAnnualRate;
+  control.getCell("D25").value = "Комиссия БГ";
+  control.getCell("E25").value = formula("E23*E24*E20/12", snapshot.result.finance.bankGuaranteeCost);
+  control.getCell("D26").value = "Доля оплаты после ПД";
+  control.getCell("E26").value = pdPaymentShare;
+  control.getCell("D27").value = "Месяц оплаты после ПД";
+  control.getCell("E27").value = formula("MAX(1,ROUNDUP(E20/2,0))", Math.max(1, Math.ceil(snapshot.result.finance.workMonths / 2)));
+  control.getCell("D28").value = "Ежемесячные расходы";
+  control.getCell("E28").value = formula("IFERROR((B19+B27)/E20,0)", snapshot.result.finance.workMonths > 0 ? snapshot.result.totals.totalWithOverhead / snapshot.result.finance.workMonths : 0);
+  control.getCell("D29").value = "Оплата по ПД и РД";
+  control.getCell("E29").value = hasPdAndRd ? 1 : 0;
   ["A16", "A17", "A18", "A19", "A20", "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28"].forEach((address, i) => {
     control.getCell(address).value = [
       "Активных строк",
@@ -240,8 +296,12 @@ export async function exportEstimateWorkbook(
   });
   setColumns(control, [34, 18, 4, 28, 18]);
   control.getColumn(2).numFmt = rub;
+  control.getColumn(5).numFmt = rub;
   control.getCell("B5").numFmt = percent;
   control.getCell("B7").numFmt = percent;
+  control.getCell("E17").numFmt = percent;
+  control.getCell("E24").numFmt = percent;
+  control.getCell("E26").numFmt = percent;
 
   constructor.getRow(1).values = [
     "ID",
