@@ -40,7 +40,7 @@ import { exportEstimateWorkbook, saveEstimateWorkbook } from "./services/excelEx
 import { exportRatesCsv, exportRatesXlsx, importRatesFile } from "./services/rateExchange";
 import { createStorageService } from "./services/storage";
 
-type View = "summary" | "estimate" | "configuration" | "rates" | "templates" | "history";
+type View = "summary" | "estimate" | "configuration" | "rates" | "sbc" | "templates" | "history";
 type EstimateFilters = {
   id: string;
   section: string;
@@ -346,6 +346,7 @@ export function App() {
   const [templates, setTemplates] = useState<EstimateTemplate[]>([]);
   const [historyItems, setHistoryItems] = useState<CalculationSnapshot[]>([]);
   const [notice, setNotice] = useState("Готово");
+  const [showSbcComparison, setShowSbcComparison] = useState(false);
   const [estimateFilters, setEstimateFilters] = useState<EstimateFilters>(emptyEstimateFilters);
   const [sortState, setSortState] = useState<SortState>(null);
   const [openHeaderMenu, setOpenHeaderMenu] = useState<EstimateColumnKey | null>(null);
@@ -692,6 +693,11 @@ export function App() {
 
   function calculateNow() {
     setNotice(`Расчет обновлен: ${new Date().toLocaleString("ru-RU")}`);
+  }
+
+  function compareWithSbc() {
+    setShowSbcComparison(true);
+    setNotice(`Сравнение с СБЦ обновлено: ${new Date().toLocaleString("ru-RU")}`);
   }
 
   function updateRate(code: string, patch: Partial<RateGroup>) {
@@ -1089,6 +1095,9 @@ export function App() {
           <button className={view === "rates" ? "active" : ""} onClick={() => setView("rates")}>
             <FileSpreadsheet size={18} /> Ставки
           </button>
+          <button className={view === "sbc" ? "active" : ""} onClick={() => setView("sbc")}>
+            <Calculator size={18} /> СБЦ
+          </button>
           <button className={view === "templates" ? "active" : ""} onClick={() => setView("templates")}>
             <FolderOpen size={18} /> Шаблоны
           </button>
@@ -1117,15 +1126,21 @@ export function App() {
               {view === "estimate" && "Расчет состава работ"}
               {view === "configuration" && "Конфигурация разделов"}
               {view === "rates" && "Ставки и справочники"}
+              {view === "sbc" && "Расчет по СБЦ"}
               {view === "templates" && "Шаблоны"}
               {view === "history" && "История расчетов"}
             </h1>
             <span>{notice}</span>
           </div>
           {view === "summary" ? (
-            <button className="primary" onClick={calculateNow}>
-              <Calculator size={18} /> Рассчитать
-            </button>
+            <div className="topbar-actions">
+              <button onClick={compareWithSbc}>
+                <Calculator size={18} /> Сравнить с СБЦ
+              </button>
+              <button className="primary" onClick={calculateNow}>
+                <Calculator size={18} /> Рассчитать
+              </button>
+            </div>
           ) : (
             <button className="ghost" onClick={resetToSeed}>
               <RotateCcw size={18} /> Сбросить
@@ -1183,6 +1198,50 @@ export function App() {
                 {result.warnings.map((warning) => (
                   <span key={warning}>{warning}</span>
                 ))}
+              </section>
+            ) : null}
+
+            {showSbcComparison ? (
+              <section className="panel sbc-compare-panel">
+                <div className="panel-heading">
+                  <h2>Сравнение с СБЦ</h2>
+                  <button onClick={() => setView("sbc")}>Настроить СБЦ</button>
+                </div>
+                <div className="stats-grid sbc-stats">
+                  <StatCard label="СБЦ без НДС" value={currency.format(result.sbc.currentPriceWithoutVat)} />
+                  <StatCard label="СБЦ с НДС" value={currency.format(result.sbc.currentPriceWithVat)} />
+                  <StatCard
+                    label="Отклонение без НДС"
+                    value={currency.format(result.sbc.differenceWithoutVat)}
+                    tone={result.sbc.differenceWithoutVat > 0 ? "warn" : undefined}
+                  />
+                  <StatCard label="Отклонение, %" value={formatPercent(result.sbc.ratioToSbc)} />
+                  <StatCard label="Нормативный срок" value={`${result.sbc.normativeDurationDays} дн.`} />
+                </div>
+                <div className="group-summary-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Стадия</th>
+                        <th>Цена СБЦ без НДС</th>
+                        <th>Доля</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><span className="group-pill">ПД</span></td>
+                        <td>{currency.format(result.sbc.pdPriceWithoutVat)}</td>
+                        <td>{formatPercent(project.sbcPdShare)}</td>
+                      </tr>
+                      <tr>
+                        <td><span className="group-pill">РД</span></td>
+                        <td>{currency.format(result.sbc.rdPriceWithoutVat)}</td>
+                        <td>{formatPercent(project.sbcRdShare)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="method-note">{result.sbc.notes.join(" ")}</p>
               </section>
             ) : null}
 
@@ -1688,6 +1747,59 @@ export function App() {
                 </tbody>
               </table>
             </div>
+          </section>
+        ) : null}
+
+        {view === "sbc" ? (
+          <section className="panel full">
+            <div className="panel-heading">
+              <h2>Методика СБЦ</h2>
+              <button className="primary" onClick={() => {
+                compareWithSbc();
+                setView("summary");
+              }}>
+                <Calculator size={18} /> Авторасчет и сравнение
+              </button>
+            </div>
+            <div className="method-note">
+              СБЦ обычно считает базовую цену проектирования по натуральному показателю <b>a + b x X</b> или процентом от стоимости строительства. Затем цена переводится в текущий уровень индексом и корректируется коэффициентами условий проектирования. Здесь все параметры редактируемые, потому что конкретные значения берутся из выбранного сборника и таблицы.
+            </div>
+            <div className="form-grid">
+              <TextField label="Сборник / таблица" value={project.sbcCollectionName} onChange={(value) => updateProject("sbcCollectionName", value)} />
+              <TextField label="Базисный уровень цен" value={project.sbcBaseYear} onChange={(value) => updateProject("sbcBaseYear", value)} />
+              <label className="field">
+                <span>Метод расчета</span>
+                <select value={project.sbcMethod} onChange={(event) => updateProject("sbcMethod", event.target.value as ProjectInput["sbcMethod"])}>
+                  <option value="natural">Натуральный показатель: a + b x X</option>
+                  <option value="constructionPercent">% от стоимости строительства</option>
+                </select>
+              </label>
+              <NumberField label="Индекс к текущему уровню" value={project.sbcIndexToCurrent} min={0} step={0.01} onChange={(value) => updateProject("sbcIndexToCurrent", value)} />
+            </div>
+            <div className="subsection-title">Базовая цена</div>
+            <div className="form-grid">
+              <NumberField label="Натуральный показатель X" value={project.sbcNaturalIndicator} min={0} step={1} onChange={(value) => updateProject("sbcNaturalIndicator", value)} suffix="ед." />
+              <NumberField label="Постоянная a" value={project.sbcConstantA} min={0} step={1000} onChange={(value) => updateProject("sbcConstantA", value)} suffix="₽" />
+              <NumberField label="Показатель b" value={project.sbcConstantB} min={0} step={1} onChange={(value) => updateProject("sbcConstantB", value)} suffix="₽/ед." />
+              <NumberField label="Стоимость строительства" value={project.sbcConstructionCost} min={0} step={1000000} onChange={(value) => updateProject("sbcConstructionCost", value)} suffix="₽" />
+              <NumberField label="% проектирования" value={project.sbcDesignPercent} min={0} step={0.001} onChange={(value) => updateProject("sbcDesignPercent", value)} suffix={formatPercent(project.sbcDesignPercent)} />
+            </div>
+            <div className="subsection-title">Коэффициенты и стадии</div>
+            <div className="form-grid">
+              <NumberField label="Категория сложности / условия" value={project.sbcComplexityCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcComplexityCoefficient", value)} />
+              <NumberField label="Дополнительный коэффициент" value={project.sbcAdjustmentCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcAdjustmentCoefficient", value)} />
+              <NumberField label="Доля ПД" value={project.sbcPdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcPdShare", value)} suffix={formatPercent(project.sbcPdShare)} />
+              <NumberField label="Доля РД" value={project.sbcRdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcRdShare", value)} suffix={formatPercent(project.sbcRdShare)} />
+              <NumberField label="Базовый норматив срока" value={project.sbcBaseDurationDays} min={0} step={1} onChange={(value) => updateProject("sbcBaseDurationDays", value)} suffix="дн." />
+              <NumberField label="Коэффициент срока" value={project.sbcDurationCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcDurationCoefficient", value)} />
+            </div>
+            <section className="stats-grid sbc-stats">
+              <StatCard label="Базовая цена" value={currency.format(result.sbc.basePrice)} />
+              <StatCard label="С коэффициентами" value={currency.format(result.sbc.adjustedBasePrice)} />
+              <StatCard label="Текущая без НДС" value={currency.format(result.sbc.currentPriceWithoutVat)} tone="accent" />
+              <StatCard label="Текущая с НДС" value={currency.format(result.sbc.currentPriceWithVat)} />
+              <StatCard label="Норматив срока" value={`${result.sbc.normativeDurationDays} дн.`} />
+            </section>
           </section>
         ) : null}
 

@@ -190,6 +190,13 @@ main {
   letter-spacing: 0;
 }
 
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .view-stack {
   display: grid;
   gap: 18px;
@@ -228,8 +235,27 @@ main {
 }
 
 .stat.warn {
-  border-color: #fbbf24;
-  background: #fffbeb;
+  border-color: #efb0b0;
+  background: #fff7f7;
+}
+
+.sbc-stats {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  margin: 14px 0;
+}
+
+.sbc-compare-panel {
+  border-color: #efc7c7;
+}
+
+.method-note {
+  margin: 0 0 16px;
+  border: 1px solid #ead1d1;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #5f2d2d;
+  padding: 12px 14px;
+  line-height: 1.5;
 }
 
 .panel {

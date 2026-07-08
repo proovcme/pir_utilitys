@@ -1,4 +1,5 @@
 export type CalculationType = "ФОТ" | "Ручная сумма" | "Заголовок" | string;
+export type SbcCalculationMethod = "natural" | "constructionPercent";
 
 export interface ProjectInput {
   projectType?: string;
@@ -13,6 +14,21 @@ export interface ProjectInput {
   workStartMonth: string;
   workEndMonth: string;
   bankGuaranteeAnnualRate: number;
+  sbcMethod: SbcCalculationMethod;
+  sbcCollectionName: string;
+  sbcBaseYear: string;
+  sbcNaturalIndicator: number;
+  sbcConstantA: number;
+  sbcConstantB: number;
+  sbcConstructionCost: number;
+  sbcDesignPercent: number;
+  sbcIndexToCurrent: number;
+  sbcComplexityCoefficient: number;
+  sbcAdjustmentCoefficient: number;
+  sbcPdShare: number;
+  sbcRdShare: number;
+  sbcBaseDurationDays: number;
+  sbcDurationCoefficient: number;
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -166,6 +182,24 @@ export interface FinanceSummary {
   cashFlow: CashFlowRow[];
 }
 
+export interface SbcResult {
+  method: SbcCalculationMethod;
+  collectionName: string;
+  baseYear: string;
+  basePrice: number;
+  adjustedBasePrice: number;
+  currentPriceWithoutVat: number;
+  currentPriceWithVat: number;
+  pdPriceWithoutVat: number;
+  rdPriceWithoutVat: number;
+  otherPriceWithoutVat: number;
+  normativeDurationDays: number;
+  differenceWithoutVat: number;
+  differenceWithVat: number;
+  ratioToSbc: number;
+  notes: string[];
+}
+
 export interface EstimateResult {
   project: ProjectInput;
   catalogVersion: number;
@@ -173,6 +207,7 @@ export interface EstimateResult {
   activeLines: CalculatedLine[];
   totals: EstimateTotals;
   finance: FinanceSummary;
+  sbc: SbcResult;
   bySource: Record<string, number>;
   byGroup: Record<string, number>;
   groupBreakdown: Array<{

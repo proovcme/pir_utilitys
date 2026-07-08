@@ -8,6 +8,7 @@ import type {
   FinanceSummary,
   ProjectInput,
   RateGroup,
+  SbcResult,
 } from "./types";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -209,6 +210,51 @@ export function calculateFinanceSummary(
   };
 }
 
+export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals): SbcResult {
+  const method = project.sbcMethod ?? "natural";
+  const naturalIndicator = project.sbcNaturalIndicator ?? project.area ?? 0;
+  const baseByNatural = (project.sbcConstantA ?? 0) + (project.sbcConstantB ?? 0) * naturalIndicator;
+  const baseByConstructionCost = (project.sbcConstructionCost ?? 0) * (project.sbcDesignPercent ?? 0);
+  const basePrice = method === "constructionPercent" ? baseByConstructionCost : baseByNatural;
+  const adjustedBasePrice = basePrice * (project.sbcComplexityCoefficient ?? 1) * (project.sbcAdjustmentCoefficient ?? 1);
+  const currentPriceWithoutVat = adjustedBasePrice * (project.sbcIndexToCurrent ?? 1);
+  const currentPriceWithVat = currentPriceWithoutVat * (1 + (project.vatRate ?? 0));
+  const pdShare = Math.max(0, project.sbcPdShare ?? 0);
+  const rdShare = Math.max(0, project.sbcRdShare ?? 0);
+  const normalizedStageShare = pdShare + rdShare > 1 ? pdShare + rdShare : 1;
+  const pdPriceWithoutVat = currentPriceWithoutVat * (pdShare / normalizedStageShare);
+  const rdPriceWithoutVat = currentPriceWithoutVat * (rdShare / normalizedStageShare);
+  const otherPriceWithoutVat = Math.max(0, currentPriceWithoutVat - pdPriceWithoutVat - rdPriceWithoutVat);
+  const normativeDurationDays = (project.sbcBaseDurationDays ?? 0) * (project.sbcDurationCoefficient ?? 1);
+  const differenceWithoutVat = totals.totalWithoutVat - currentPriceWithoutVat;
+  const differenceWithVat = totals.totalWithVat - currentPriceWithVat;
+  const notes = [
+    method === "natural"
+      ? "Цена СБЦ рассчитана по натуральному показателю: a + b x X."
+      : "Цена СБЦ рассчитана процентом от стоимости строительства.",
+    "Параметры a, b, процент, индекс и коэффициенты должны уточняться по выбранному сборнику/таблице СБЦ.",
+    "Норматив срока задан отдельным параметром и корректируется коэффициентом условий проектирования.",
+  ];
+
+  return {
+    method,
+    collectionName: project.sbcCollectionName ?? "СБЦ",
+    baseYear: project.sbcBaseYear ?? "",
+    basePrice: roundMoney(basePrice),
+    adjustedBasePrice: roundMoney(adjustedBasePrice),
+    currentPriceWithoutVat: roundMoney(currentPriceWithoutVat),
+    currentPriceWithVat: roundMoney(currentPriceWithVat),
+    pdPriceWithoutVat: roundMoney(pdPriceWithoutVat),
+    rdPriceWithoutVat: roundMoney(rdPriceWithoutVat),
+    otherPriceWithoutVat: roundMoney(otherPriceWithoutVat),
+    normativeDurationDays: roundMoney(normativeDurationDays),
+    differenceWithoutVat: roundMoney(differenceWithoutVat),
+    differenceWithVat: roundMoney(differenceWithVat),
+    ratioToSbc: roundMoney(currentPriceWithoutVat > 0 ? totals.totalWithoutVat / currentPriceWithoutVat - 1 : 0),
+    notes,
+  };
+}
+
 export function calculateLine(
   line: EstimateLine,
   project: ProjectInput,
@@ -372,6 +418,7 @@ export function calculateEstimate(project: ProjectInput, catalog: Catalog): Esti
     activeLines,
     totals,
     finance: calculateFinanceSummary(project, totals, groupBreakdown),
+    sbc: calculateSbcResult(project, totals),
     bySource,
     byGroup,
     groupBreakdown,

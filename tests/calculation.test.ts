@@ -135,4 +135,15 @@ describe("calculateEstimate", () => {
     expect(result.finance.cashFlow[1].revenue).toBe(0);
     expect(result.finance.cashFlow[2].revenue).toBe(result.finance.remainingAmount);
   });
+
+  it("calculates configurable SBC baseline and compares it with the estimate", () => {
+    const result = calculateEstimate(seedCatalog.projectInput, seedToCatalog(seedCatalog));
+
+    expect(result.sbc.method).toBe("natural");
+    expect(result.sbc.basePrice).toBe(4_300_000);
+    expect(result.sbc.currentPriceWithoutVat).toBe(4_300_000);
+    expect(result.sbc.currentPriceWithVat).toBe(5_246_000);
+    expect(result.sbc.normativeDurationDays).toBe(90);
+    expect(result.sbc.differenceWithoutVat).toBe(-210_342.11);
+  });
 });
