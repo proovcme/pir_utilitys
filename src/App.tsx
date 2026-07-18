@@ -40,8 +40,9 @@ import type {
 import { exportEstimateWorkbook, saveEstimateWorkbook } from "./services/excelExport";
 import { exportRatesCsv, exportRatesXlsx, importRatesFile } from "./services/rateExchange";
 import { createStorageService } from "./services/storage";
+import { loadLociaRates } from "./services/lociaRates";
 
-type View = "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
+type View = "registry" | "newCalculation" | "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
 type EstimateFilters = {
   id: string;
   section: string;
@@ -343,7 +344,7 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
 }
 
 export function App() {
-  const [view, setView] = useState<View>("summary");
+  const [view, setView] = useState<View>("registry");
   const [project, setProject] = useState<ProjectInput>(normalizeProject(seedCatalog.projectInput));
   const [catalog, setCatalog] = useState<Catalog>(() => normalizeCatalog(seedToCatalog(seedCatalog)));
   const [query, setQuery] = useState("");
@@ -361,6 +362,8 @@ export function App() {
   const [selectedConfigLineIds, setSelectedConfigLineIds] = useState<string[]>([]);
   const [presetDraftName, setPresetDraftName] = useState("Гостиницы");
   const [openCommentLineIds, setOpenCommentLineIds] = useState<string[]>([]);
+  const [newCalculationName, setNewCalculationName] = useState("");
+  const [newCalculationArea, setNewCalculationArea] = useState("");
 
   const result = useMemo(() => calculateEstimate(project, catalog), [project, catalog]);
   const monthlyDepreciation = useMemo(() => calculateMonthlyDepreciation(project), [project]);
@@ -530,11 +533,22 @@ export function App() {
 
   async function loadInitialData() {
     const workingState = await storage.getWorkingState();
+    let nextCatalog = normalizeCatalog(workingState?.catalog ?? seedToCatalog(seedCatalog));
     if (workingState) {
       setProject(normalizeProject(workingState.project));
-      setCatalog(normalizeCatalog(workingState.catalog));
-      setNotice(`Загружена конфигурация из БД: ${new Date(workingState.updatedAt).toLocaleString("ru-RU")}`);
     }
+    try {
+      const shared = await loadLociaRates(nextCatalog.rates);
+      if (shared) {
+        nextCatalog = { ...nextCatalog, rates: shared.rates };
+        setNotice(shared.notice);
+      } else if (workingState) {
+        setNotice(`Загружена конфигурация из БД: ${new Date(workingState.updatedAt).toLocaleString("ru-RU")}`);
+      }
+    } catch {
+      setNotice("Единые ставки Лоции временно недоступны — используется сохранённая конфигурация");
+    }
+    setCatalog(nextCatalog);
     await refreshSavedData();
   }
 
@@ -694,6 +708,65 @@ export function App() {
   function applyBuiltInPreset(key: keyof Pick<ProjectInput, "includeCommon" | "presetPdOks" | "presetPdLinear" | "presetRdFull" | "presetRdCore" | "presetRdFrequent">) {
     setProject((current) => ({ ...current, [key]: true }));
     setNotice("Шаблон состава применен");
+  }
+
+  function clearEstimate() {
+    setProject((current) => ({
+      ...current,
+      includeCommon: false,
+      presetPdOks: false,
+      presetPdLinear: false,
+      presetRdFull: false,
+      presetRdCore: false,
+      presetRdFrequent: false,
+      useGlobalCoefficient: false,
+      useGlobalDuration: false,
+    }));
+    setCatalog((current) => ({
+      ...current,
+      lines: current.lines.map((line) => ({ ...line, manualInclude: false, excluded: false })),
+    }));
+    setNotice("Расчет обнулен: активные работы и общие параметры выключены");
+  }
+
+  function startNewCalculation() {
+    setNewCalculationName("");
+    setNewCalculationArea("");
+    setView("newCalculation");
+  }
+
+  function createNewCalculation() {
+    const area = Number(newCalculationArea.replace(",", "."));
+    if (!newCalculationName.trim() || !Number.isFinite(area) || area <= 0) {
+      setNotice("Введите название объекта и площадь больше нуля");
+      return;
+    }
+    setProject(normalizeProject({
+      ...seedCatalog.projectInput,
+      projectType: newCalculationName.trim(),
+      address: "",
+      customer: "",
+      area,
+      includeCommon: false,
+      presetPdOks: false,
+      presetPdLinear: false,
+      presetRdFull: false,
+      presetRdCore: false,
+      presetRdFrequent: false,
+    }));
+    setCatalog((current) => ({
+      ...current,
+      lines: current.lines.map((line) => ({ ...line, manualInclude: false, excluded: false })),
+    }));
+    setNotice(`Создан новый расчет: ${newCalculationName.trim()}`);
+    setView("estimate");
+  }
+
+  function openSnapshot(snapshot: CalculationSnapshot) {
+    setProject(normalizeProject(snapshot.project));
+    setCatalog(snapshot.catalog);
+    setNotice(`Открыт расчет: ${snapshot.name}`);
+    setView("summary");
   }
 
   function calculateNow() {
@@ -1088,6 +1161,9 @@ export function App() {
           </div>
         </div>
         <nav>
+          <button className={view === "registry" ? "active" : ""} onClick={() => setView("registry")}>
+            <FileClock size={18} /> Реестр расчетов
+          </button>
           <button className={view === "summary" ? "active" : ""} onClick={() => setView("summary")}>
             <Calculator size={18} /> Итог
           </button>
@@ -1131,6 +1207,8 @@ export function App() {
           <div>
             <h1>
               {view === "summary" && "Итог"}
+              {view === "registry" && "Реестр расчетов"}
+              {view === "newCalculation" && "Новый расчет"}
               {view === "estimate" && "Расчет состава работ"}
               {view === "configuration" && "Конфигурация разделов"}
               {view === "rates" && "Ставки и справочники"}
@@ -1141,7 +1219,11 @@ export function App() {
             </h1>
             <span>{notice}</span>
           </div>
-          {view === "summary" ? (
+          {view === "registry" ? (
+            <div className="topbar-actions">
+              <button className="primary" onClick={startNewCalculation}><Plus size={18} /> Новый расчет</button>
+            </div>
+          ) : view === "summary" ? (
             <div className="topbar-actions">
               <button onClick={compareWithSbc}>
                 <Calculator size={18} /> Сравнить с СБЦ
@@ -1156,6 +1238,46 @@ export function App() {
             </button>
           )}
         </header>
+
+        {view === "registry" ? (
+          <div className="view-stack">
+            <section className="registry-hero">
+              <div>
+                <span className="eyebrow">КАЛЬКУЛЯТОР ОЦЕНКИ</span>
+                <h2>Реестр расчетов</h2>
+                <p>Начните новую оценку или продолжите сохраненный расчет.</p>
+              </div>
+              <button className="primary registry-new" onClick={startNewCalculation}><Plus size={20} /> Новый расчет</button>
+            </section>
+            <section className="panel full">
+              <div className="panel-heading"><h2>История</h2><span>{historyItems.length} расчетов</span></div>
+              {historyItems.length ? (
+                <div className="cards-grid">
+                  {historyItems.map((snapshot) => (
+                    <article className="item-card" key={snapshot.id}>
+                      <h3>{snapshot.name}</h3>
+                      <p>{new Date(snapshot.createdAt).toLocaleString("ru-RU")}</p>
+                      <strong>{currency.format(snapshot.result.totals.totalWithVat)}</strong>
+                      <span>{snapshot.result.totals.activeRows} активных строк</span>
+                      <div className="item-actions"><button onClick={() => openSnapshot(snapshot)}><FolderOpen size={16} /> Открыть</button></div>
+                    </article>
+                  ))}
+                </div>
+              ) : <div className="empty-state"><FileClock size={28} /><p>Сохраненных расчетов пока нет.</p><button onClick={startNewCalculation}>Создать первый</button></div>}
+            </section>
+          </div>
+        ) : null}
+
+        {view === "newCalculation" ? (
+          <section className="panel new-calculation-panel">
+            <div className="panel-heading"><h2>Данные объекта</h2><span>Оба поля обязательны</span></div>
+            <div className="form-grid">
+              <TextField label="Название объекта" value={newCalculationName} placeholder="Например: НИИ гриппа" onChange={setNewCalculationName} />
+              <NumberField label="Площадь объекта" value={Number(newCalculationArea.replace(",", ".")) || 0} min={0} onChange={(value) => setNewCalculationArea(String(value))} suffix="м²" />
+            </div>
+            <div className="panel-actions"><button onClick={() => setView("registry")}>Отмена</button><button className="primary" disabled={!newCalculationName.trim() || !(Number(newCalculationArea.replace(",", ".")) > 0)} onClick={createNewCalculation}>Перейти к расчету</button></div>
+          </section>
+        ) : null}
 
         {view === "summary" ? (
           <div className="view-stack">
@@ -1379,6 +1501,9 @@ export function App() {
               {catalog.presetSets.filter((preset) => preset.lineIds?.length).map((preset) => (
                 <button key={preset.name} onClick={() => applyPresetSet(preset.name)}>{preset.name}</button>
               ))}
+              <button className="danger reset-calculation" onClick={clearEstimate} title="Выключить все работы, не изменяя ставки и справочники">
+                <RotateCcw size={18} /> Обнулить всё
+              </button>
             </div>
             <div className="bulk-controls estimate-bulk-controls">
               <div>
@@ -1853,11 +1978,7 @@ export function App() {
                   <span>{snapshot.result.totals.activeRows} активных строк</span>
                   {snapshot.exportedPath ? <small>{snapshot.exportedPath}</small> : null}
                   <div className="item-actions">
-                    <button onClick={() => {
-                      setProject(normalizeProject(snapshot.project));
-                      setCatalog(snapshot.catalog);
-    setView("summary");
-                    }}>
+                    <button onClick={() => openSnapshot(snapshot)}>
                       <FolderOpen size={16} /> Открыть
                     </button>
                     <button className="danger" onClick={() => deleteSnapshot(snapshot.id)}><Trash2 size={16} /></button>

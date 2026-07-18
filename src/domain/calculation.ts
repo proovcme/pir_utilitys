@@ -54,6 +54,8 @@ export const getRateGroupCode = (code: string | null | undefined) => {
 export const getRateByGroupOrCode = (code: string | null, rates: RateGroup[]) => {
   if (!code) return 0;
   const rateMap = buildRateMap(rates);
+  const directRate = rateMap.get(code);
+  if (directRate && directRate > 0) return directRate;
   const definition = rateDisciplineDefinitions.find((item) => item.code === code);
   if (definition) {
     const values = definition.codes
@@ -61,8 +63,7 @@ export const getRateByGroupOrCode = (code: string | null, rates: RateGroup[]) =>
       .filter((value) => value > 0);
     if (values.length) return values.reduce((sum, value) => sum + value, 0) / values.length;
   }
-  const directRate = rateMap.get(code);
-  return directRate && directRate > 0 ? directRate : 0;
+  return 0;
 };
 
 export const normalizeCalculationType = (type: string | null | undefined) => {

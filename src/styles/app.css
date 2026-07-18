@@ -69,6 +69,11 @@ button.danger {
   padding: 0;
 }
 
+button.reset-calculation {
+  width: auto;
+  padding: 0 14px;
+}
+
 input,
 select {
   width: 100%;
@@ -98,6 +103,61 @@ select:focus {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 236px minmax(0, 1fr);
+}
+
+.registry-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 34px;
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 18%, rgba(216, 166, 76, 0.38), transparent 28%),
+    linear-gradient(135deg, #751b2b, #a72525 58%, #59203c);
+}
+
+.registry-hero h2 {
+  margin: 6px 0 8px;
+  font-size: 30px;
+}
+
+.registry-hero p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.eyebrow {
+  color: #f4d28b;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.registry-new {
+  flex: 0 0 auto;
+  background: #fff !important;
+  color: #8f2330 !important;
+}
+
+.new-calculation-panel {
+  max-width: 780px;
+  margin: 8vh auto 0;
+}
+
+.empty-state {
+  min-height: 220px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: #718096;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
 }
 
 .sidebar {
