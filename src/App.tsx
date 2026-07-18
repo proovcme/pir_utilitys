@@ -41,6 +41,7 @@ import { exportEstimateWorkbook, saveEstimateWorkbook } from "./services/excelEx
 import { exportRatesCsv, exportRatesXlsx, importRatesFile } from "./services/rateExchange";
 import { createStorageService } from "./services/storage";
 import { loadLociaRates } from "./services/lociaRates";
+import { deleteSnapshotFromLocia, syncSnapshotToLocia } from "./services/lociaPortfolio";
 
 type View = "registry" | "newCalculation" | "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
 type EstimateFilters = {
@@ -1030,7 +1031,12 @@ export function App() {
   async function saveHistorySnapshot() {
     const snapshot = makeSnapshot(`Расчет от ${new Date().toLocaleString("ru-RU")}`, project, catalog);
     await storage.saveSnapshot(snapshot);
-    setNotice("Снимок расчета добавлен в историю");
+    try {
+      await syncSnapshotToLocia(snapshot);
+      setNotice("Снимок сохранён в истории и портфеле директора");
+    } catch (error) {
+      setNotice(`Снимок сохранён локально; портфель не обновлён: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+    }
     await refreshSavedData();
   }
 
@@ -1044,7 +1050,12 @@ export function App() {
     if (path) {
       const saved = { ...snapshot, exportedPath: path };
       await storage.saveSnapshot(saved);
-      setNotice(`Excel выгружен: ${path}`);
+      try {
+        await syncSnapshotToLocia(saved);
+        setNotice(`Excel выгружен, расчёт добавлен в портфель: ${path}`);
+      } catch (error) {
+        setNotice(`Excel выгружен; портфель не обновлён: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+      }
       await refreshSavedData();
     }
   }
@@ -1094,8 +1105,14 @@ export function App() {
   }
 
   async function deleteSnapshot(snapshotId: string) {
-    await storage.deleteSnapshot(snapshotId);
-    await refreshSavedData();
+    try {
+      await deleteSnapshotFromLocia(snapshotId);
+      await storage.deleteSnapshot(snapshotId);
+      setNotice("Снимок удалён из истории и портфеля");
+      await refreshSavedData();
+    } catch (error) {
+      setNotice(`Не удалось удалить снимок: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+    }
   }
 
   function HeaderFilter({ column, label }: { column: EstimateColumnKey; label: string }) {

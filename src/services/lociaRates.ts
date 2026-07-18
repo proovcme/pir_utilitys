@@ -1,13 +1,16 @@
 import type { RateGroup } from "../domain/types";
 import { rateDisciplineDefinitions } from "../domain/calculation";
 
-type LociaRateResponse = { rates: RateGroup[]; source: string; period: string | null; working_hours: number };
+type LociaRateResponse = { rates: RateGroup[]; source: string; period: string | null; working_hours: number; csrf_token?: string };
+
+let lociaCsrfToken: string | null = null;
 
 export async function loadLociaRates(current: RateGroup[]): Promise<{ rates: RateGroup[]; notice: string } | null> {
   if (typeof window === "undefined" || "__TAURI_INTERNALS__" in window) return null;
   const response = await fetch("/calculator/api/rates", { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const payload = (await response.json()) as LociaRateResponse;
+  lociaCsrfToken = payload.csrf_token ?? null;
   if (!payload.rates?.length) return null;
   const incoming = new Map(payload.rates.map((rate) => [rate.code, rate]));
   const expanded = new Map(current.map((rate) => [rate.code, rate]));
@@ -19,4 +22,14 @@ export async function loadLociaRates(current: RateGroup[]): Promise<{ rates: Rat
   }
   const source = payload.source === "staffing" ? "утверждённого штатного расписания" : "единых ставок Лоции";
   return { rates: Array.from(expanded.values()), notice: `Ставки загружены из ${source}${payload.period ? ` за ${payload.period}` : ""}` };
+}
+
+export async function getLociaCsrfToken(): Promise<string | null> {
+  if (typeof window === "undefined" || "__TAURI_INTERNALS__" in window) return null;
+  if (lociaCsrfToken) return lociaCsrfToken;
+  const response = await fetch("/calculator/api/rates", { credentials: "same-origin", cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const payload = (await response.json()) as LociaRateResponse;
+  lociaCsrfToken = payload.csrf_token ?? null;
+  return lociaCsrfToken;
 }
