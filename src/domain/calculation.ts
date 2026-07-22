@@ -30,6 +30,10 @@ export const rateDisciplineDefinitions = [
   { code: "ГП", title: "ГП", description: "Генеральный план", codes: ["ГП"] },
   { code: "ПОС", title: "ПОС", description: "Организация строительства", codes: ["ПОС"] },
   { code: "ООС", title: "ООС", description: "Охрана окружающей среды", codes: ["ООС"] },
+  { code: "АК", title: "АК", description: "Архитектурная акустика и защита от шума", codes: ["АК"] },
+  { code: "ОБС", title: "ОБС", description: "Обследование конструкций и инженерных систем", codes: ["ОБС"] },
+  { code: "СКАН", title: "СКАН", description: "Лазерное сканирование и обмерные работы", codes: ["СКАН"] },
+  { code: "ГЕО", title: "ГЕО", description: "Инженерно-геодезические работы", codes: ["ГЕО"] },
   { code: "ТХ", title: "ТХ", description: "Технология", codes: ["ТХ"] },
   { code: "СБЭ", title: "СБЭ", description: "Безопасная эксплуатация", codes: ["СБЭ"] },
 ];
@@ -110,7 +114,10 @@ export const getLineStaffing = (line: EstimateLine) => {
 
 const isFotType = (type: string | null | undefined) => normalizeCalculationType(type) === "ФОТ";
 const isHeadingType = (type: string | null | undefined) => normalizeCalculationType(type) === "Заголовок";
-const isManualType = (type: string | null | undefined) => normalizeCalculationType(type) === "Ручной";
+const isManualType = (type: string | null | undefined) => {
+  const normalized = normalizeCalculationType(type);
+  return normalized === "Ручной" || normalized === "Подряд";
+};
 const isPercentType = (type: string | null | undefined) => normalizeCalculationType(type) === "% от общего";
 
 export function resolveCostGroup(line: EstimateLine) {

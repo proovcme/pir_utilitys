@@ -48,6 +48,7 @@ describe("exportEstimateWorkbook", () => {
     expect(constructor.getCell("R2").value).toMatchObject({ formula: expect.stringContaining("IF") });
     expect(constructor.getCell("W2").value).toMatchObject({ formula: expect.stringContaining("VLOOKUP") });
     expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("SUMIFS") });
+    expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("Подряд") });
     const firstEstimateIndex = estimate.getCell("A9").value;
     const firstEstimateCost = estimate.getCell("N9").value;
     expect(firstEstimateIndex).toMatchObject({ formula: expect.stringMatching(/^'Конструктор'!\$AG\d+$/) });

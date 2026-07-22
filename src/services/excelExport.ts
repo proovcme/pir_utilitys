@@ -379,7 +379,7 @@ export async function exportEstimateWorkbook(
       line.manualAmount,
       formula(`IF($R${row}=1,($S${row}+$T${row}+$U${row})*$V${row}/30*$W${row},0)`),
       formula(`IF(${quoteSheet("Пульт")}!$E$4=1,${quoteSheet("Пульт")}!$E$5,${line.coefficient})`),
-      formula(`IF($R${row}=1,IF(OR($H${row}="Ручной",$H${row}="Ручная сумма"),$X${row},IF($H${row}="% от общего",$X${row}/100*SUMIFS($AA:$AA,$R:$R,1,$H:$H,"<>% от общего"),$Y${row}*$Z${row})),0)`),
+      formula(`IF($R${row}=1,IF(OR($H${row}="Ручной",$H${row}="Ручная сумма",$H${row}="Подряд"),$X${row},IF($H${row}="% от общего",$X${row}/100*SUMIFS($AA:$AA,$R:$R,1,$H:$H,"<>% от общего"),$Y${row}*$Z${row})),0)`),
       line.comment,
       formula(`IF($R${row}=1,$AA${row}*(1+${quoteSheet("Пульт")}!$B$7),0)`),
       formula(`IF($R${row}=1,$AC${row}*${quoteSheet("Пульт")}!$B$6,0)`),

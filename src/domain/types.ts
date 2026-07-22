@@ -1,4 +1,4 @@
-export type CalculationType = "ФОТ" | "Ручная сумма" | "Заголовок" | string;
+export type CalculationType = "ФОТ" | "Ручной" | "Подряд" | "% от общего" | "Заголовок" | string;
 export type SbcCalculationMethod = "natural" | "constructionPercent";
 
 export interface ProjectInput {

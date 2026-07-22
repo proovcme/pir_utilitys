@@ -29,6 +29,7 @@ import {
   resolveCostGroup,
   seedToCatalog,
 } from "./domain/calculation";
+import { migrateCatalogLines } from "./domain/catalogMigration";
 import type {
   CalculationSnapshot,
   Catalog,
@@ -106,11 +107,14 @@ const getDefaultStageDuration = (stage: string, lines: EstimateLine[]) => {
 };
 const normalizeCatalog = (catalog: Catalog): Catalog => {
   const seed = seedToCatalog(seedCatalog);
+  const migratedLines = migrateCatalogLines(catalog.lines, seed.lines, catalog.version ?? 1);
   const rateMap = new Map(catalog.rates.map((rate) => [rate.code, rate]));
   const rdReferenceMap = new Map(seed.rdReference.map((item) => [item.mark, item]));
   catalog.rdReference?.forEach((item) => rdReferenceMap.set(item.mark, item));
-  const pp87ReferenceMap = new Map(seed.pp87Reference.map((item) => [`${item.type}:${item.number}:${item.mark ?? ""}`, item]));
-  catalog.pp87Reference?.forEach((item) => pp87ReferenceMap.set(`${item.type}:${item.number}:${item.mark ?? ""}`, item));
+  const pp87ReferenceMap = new Map(
+    (catalog.pp87Reference ?? []).map((item) => [`${item.type}:${item.number}:${item.mark ?? ""}`, item]),
+  );
+  seed.pp87Reference.forEach((item) => pp87ReferenceMap.set(`${item.type}:${item.number}:${item.mark ?? ""}`, item));
   seed.rates.forEach((seedRate) => {
     const currentRate = rateMap.get(seedRate.code);
     if (!currentRate) {
@@ -125,11 +129,12 @@ const normalizeCatalog = (catalog: Catalog): Catalog => {
   return {
     ...seed,
     ...catalog,
+    version: seed.version,
     rates: Array.from(rateMap.values()),
     rdReference: Array.from(rdReferenceMap.values()),
     pp87Reference: Array.from(pp87ReferenceMap.values()),
     presetSets: catalog.presetSets?.length ? catalog.presetSets : seed.presetSets,
-    lines: catalog.lines.map((line) => {
+    lines: migratedLines.map((line) => {
       const isPp87Section5Header =
         line.section === "Раздел 5" &&
         String(line.name ?? "").startsWith("Сведения об инженерном оборудовании");
@@ -166,6 +171,7 @@ const emptyEstimateFilters: EstimateFilters = {
 const isManualOrPercentLine = (line: EstimateLine) =>
   line.calculationType === "Ручной" ||
   line.calculationType === "Ручная сумма" ||
+  line.calculationType === "Подряд" ||
   line.calculationType === "% от общего";
 
 function makeSnapshot(name: string, project: ProjectInput, catalog: Catalog): CalculationSnapshot {
@@ -1663,6 +1669,7 @@ export function App() {
 	                            <select value={line.calculationType === "Ручная сумма" ? "Ручной" : line.calculationType ?? ""} onChange={(event) => updateLine(line.id, { calculationType: event.target.value })}>
                                 <option>ФОТ</option>
                                 <option>Ручной</option>
+                                <option>Подряд</option>
                                 <option>% от общего</option>
                                 <option>Заголовок</option>
 	                              </select>

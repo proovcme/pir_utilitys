@@ -6,12 +6,12 @@ describe("calculateEstimate", () => {
   it("matches the source workbook totals with default computer depreciation", () => {
     const result = calculateEstimate(seedCatalog.projectInput, seedToCatalog(seedCatalog));
 
-    expect(result.totals.activeRows).toBe(15);
-    expect(result.totals.directWorks).toBe(3_970_541.64);
-    expect(result.totals.bufferAmount).toBe(119_116.25);
-    expect(result.totals.totalWithoutVat).toBe(4_089_657.89);
-    expect(result.totals.vatAmount).toBe(899_724.74);
-    expect(result.totals.totalWithVat).toBe(4_989_382.62);
+    expect(result.totals.activeRows).toBe(18);
+    expect(result.totals.directWorks).toBe(3_743_888.16);
+    expect(result.totals.bufferAmount).toBe(112_316.64);
+    expect(result.totals.totalWithoutVat).toBe(3_856_204.8);
+    expect(result.totals.vatAmount).toBe(848_365.06);
+    expect(result.totals.totalWithVat).toBe(4_704_569.86);
   });
 
   it("lets manual include activate a line outside presets", () => {
@@ -68,6 +68,27 @@ describe("calculateEstimate", () => {
     });
 
     expect(result.totals.directWorks).toBe(123456);
+  });
+
+  it("calculates any subcontracted section from the entered contract amount", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const subcontractedLine = {
+      ...catalog.lines.find((line) => line.id === "ПП87.ОКС.8")!,
+      calculationType: "Подряд",
+      manualInclude: true,
+      excluded: false,
+      manualAmount: 987654.32,
+      presetPdOks: false,
+    };
+
+    const result = calculateEstimate(seedCatalog.projectInput, {
+      ...catalog,
+      lines: [subcontractedLine],
+    });
+
+    expect(result.activeLines[0].calculationType).toBe("Подряд");
+    expect(result.totals.directWorks).toBe(987654.32);
+    expect(result.totals.warningCount).toBe(0);
   });
 
   it("reports missing rate warnings for active FOT lines", () => {
@@ -144,7 +165,7 @@ describe("calculateEstimate", () => {
     expect(result.sbc.currentPriceWithoutVat).toBe(4_300_000);
     expect(result.sbc.currentPriceWithVat).toBe(5_246_000);
     expect(result.sbc.normativeDurationDays).toBe(90);
-    expect(result.sbc.differenceWithoutVat).toBe(-210_342.11);
+    expect(result.sbc.differenceWithoutVat).toBe(-443_795.2);
   });
 
   it("contains the expanded RD engineering marks and maps them to rate groups", () => {
@@ -160,6 +181,20 @@ describe("calculateEstimate", () => {
       const reference = referenceByMark.get(mark);
       expect(reference, `Нет марки ${mark} в базе РД`).toBeDefined();
       expect(getRateGroupCode(reference?.departmentCode), `Нет группы ставок для ${mark}`).toBeTruthy();
+    });
+  });
+
+  it("contains the current PP87 OKS sections and requested general work", () => {
+    const oksSections = seedCatalog.pp87Reference
+      .filter((item) => item.type === "ОКС" && !String(item.number).includes("."))
+      .map((item) => String(item.number));
+    expect(oksSections).toEqual(Array.from({ length: 13 }, (_, index) => String(index + 1)));
+    expect(seedCatalog.lines.find((line) => line.id === "ПП87.ОКС.8")?.departmentCode).toBe("ООС");
+    expect(seedCatalog.lines.find((line) => line.id === "ДОП.ПД.АКУСТИКА")?.calculationType).toBe("Подряд");
+    ["ОБЩ.ОБСЛЕДОВАНИЕ", "ОБЩ.СКАНИРОВАНИЕ", "ОБЩ.ГЕОДЕЗИЯ"].forEach((id) => {
+      const line = seedCatalog.lines.find((item) => item.id === id);
+      expect(line, `Нет общей работы ${id}`).toBeDefined();
+      expect(line?.calculationType).toBe("Подряд");
     });
   });
 });

@@ -1,7 +1,7 @@
 import type { SeedCatalog } from "../domain/types";
 
 export const seedCatalog = {
-  "version": 1,
+  "version": 2,
   "sourceWorkbook": "Калькулятор_оценки_конструктор_ПД_РД_ФЗИП.xlsx",
   "projectInput": {
     "projectType": "",
@@ -303,36 +303,13 @@ export const seedCatalog = {
       "comment": "ПД ОКС по ПП87"
     },
     {
-      "id": "ПП87.ОКС.5.7",
-      "source": "ПП87",
-      "category": "ПД ОКС",
-      "section": "ТХ",
-      "name": "Технологические решения",
-      "performer": "ДПР",
-      "departmentCode": "ТХ",
-      "calculationType": "ФОТ",
-      "presetPdOks": true,
-      "presetPdLinear": false,
-      "presetRdFull": false,
-      "presetRdCore": false,
-      "presetRdFrequent": false,
-      "common": false,
-      "manualInclude": false,
-      "excluded": false,
-      "workUnits": 1.0,
-      "durationDays": 30.0,
-      "manualAmount": 0.0,
-      "coefficient": 1.0,
-      "comment": "ПД ОКС по ПП87"
-    },
-    {
       "id": "ПП87.ОКС.6",
       "source": "ПП87",
       "category": "ПД ОКС",
       "section": "Раздел 6",
-      "name": "Проект организации строительства",
+      "name": "Технологические решения",
       "performer": "ДПР",
-      "departmentCode": "ПОС",
+      "departmentCode": "ТХ",
       "calculationType": "ФОТ",
       "presetPdOks": true,
       "presetPdLinear": false,
@@ -353,9 +330,9 @@ export const seedCatalog = {
       "source": "ПП87",
       "category": "ПД ОКС",
       "section": "Раздел 7",
-      "name": "Мероприятия по охране окружающей среды",
+      "name": "Проект организации строительства",
       "performer": "ДПР",
-      "departmentCode": "ООС",
+      "departmentCode": "ПОС",
       "calculationType": "ФОТ",
       "presetPdOks": true,
       "presetPdLinear": false,
@@ -376,9 +353,9 @@ export const seedCatalog = {
       "source": "ПП87",
       "category": "ПД ОКС",
       "section": "Раздел 8",
-      "name": "Мероприятия по обеспечению пожарной безопасности",
+      "name": "Мероприятия по охране окружающей среды",
       "performer": "ДПР",
-      "departmentCode": "ПБ",
+      "departmentCode": "ООС",
       "calculationType": "ФОТ",
       "presetPdOks": true,
       "presetPdLinear": false,
@@ -399,6 +376,29 @@ export const seedCatalog = {
       "source": "ПП87",
       "category": "ПД ОКС",
       "section": "Раздел 9",
+      "name": "Мероприятия по обеспечению пожарной безопасности",
+      "performer": "ДПР",
+      "departmentCode": "ПБ",
+      "calculationType": "ФОТ",
+      "presetPdOks": true,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": false,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 1.0,
+      "durationDays": 30.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "ПД ОКС по ПП87"
+    },
+    {
+      "id": "ПП87.ОКС.10",
+      "source": "ПП87",
+      "category": "ПД ОКС",
+      "section": "Раздел 10",
       "name": "Требования к обеспечению безопасной эксплуатации объектов капитального строительства",
       "performer": "ДПР",
       "departmentCode": "СБЭ",
@@ -418,10 +418,33 @@ export const seedCatalog = {
       "comment": "ПД ОКС по ПП87"
     },
     {
-      "id": "ПП87.ОКС.10",
+      "id": "ПП87.ОКС.11",
       "source": "ПП87",
       "category": "ПД ОКС",
-      "section": "Раздел 10",
+      "section": "Раздел 11",
+      "name": "Мероприятия по обеспечению доступа инвалидов к объекту капитального строительства",
+      "performer": "ДПР",
+      "departmentCode": "АР",
+      "calculationType": "ФОТ",
+      "presetPdOks": true,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": false,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.5,
+      "durationDays": 30.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "ПД ОКС по ПП87"
+    },
+    {
+      "id": "ПП87.ОКС.12",
+      "source": "ПП87",
+      "category": "ПД ОКС",
+      "section": "Раздел 12",
       "name": "Смета на строительство, реконструкцию, капитальный ремонт, снос объекта капитального строительства",
       "performer": "ДПР",
       "departmentCode": "СМ",
@@ -439,6 +462,53 @@ export const seedCatalog = {
       "manualAmount": 0.0,
       "coefficient": 1.0,
       "comment": "ПД ОКС по ПП87"
+    },
+    {
+      "id": "ПП87.ОКС.13",
+      "source": "ПП87",
+      "category": "ПД ОКС",
+      "section": "Раздел 13",
+      "name": "Иная документация в случаях, предусмотренных законодательными и иными нормативными правовыми актами Российской Федерации",
+      "performer": "ДПР",
+      "departmentCode": "ГИП",
+      "calculationType": "ФОТ",
+      "presetPdOks": true,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": false,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.5,
+      "durationDays": 30.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "ПД ОКС по ПП87; состав уточняется заданием и применимыми НПА"
+    },
+    {
+      "id": "ДОП.ПД.АКУСТИКА",
+      "source": "Дополнительные работы",
+      "costGroup": "ПД",
+      "category": "ПД специальные",
+      "section": "АК",
+      "name": "Архитектурная акустика и защита от шума",
+      "performer": "Подрядчик",
+      "departmentCode": "АК",
+      "calculationType": "Подряд",
+      "presetPdOks": true,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": false,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.0,
+      "durationDays": 0.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "Дополнительная работа по заданию на проектирование; введите договорную сумму"
     },
     {
       "id": "ПП87.ЛИН.1",
@@ -1752,6 +1822,75 @@ export const seedCatalog = {
       "comment": "введите сумму вручную в колонку «Ручная сумма»"
     },
     {
+      "id": "ОБЩ.ОБСЛЕДОВАНИЕ",
+      "source": "Общие",
+      "category": "Общие работы",
+      "section": "Обследование",
+      "name": "Обследование конструкций и инженерных систем",
+      "performer": "Подрядчик",
+      "departmentCode": "ОБС",
+      "calculationType": "Подряд",
+      "presetPdOks": false,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": true,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.0,
+      "durationDays": 0.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "Общая подрядная работа; введите договорную сумму"
+    },
+    {
+      "id": "ОБЩ.СКАНИРОВАНИЕ",
+      "source": "Общие",
+      "category": "Общие работы",
+      "section": "Сканирование",
+      "name": "Лазерное сканирование и обмерные работы",
+      "performer": "Подрядчик",
+      "departmentCode": "СКАН",
+      "calculationType": "Подряд",
+      "presetPdOks": false,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": true,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.0,
+      "durationDays": 0.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "Общая подрядная работа; введите договорную сумму"
+    },
+    {
+      "id": "ОБЩ.ГЕОДЕЗИЯ",
+      "source": "Общие",
+      "category": "Общие работы",
+      "section": "Геодезия",
+      "name": "Инженерно-геодезические работы",
+      "performer": "Подрядчик",
+      "departmentCode": "ГЕО",
+      "calculationType": "Подряд",
+      "presetPdOks": false,
+      "presetPdLinear": false,
+      "presetRdFull": false,
+      "presetRdCore": false,
+      "presetRdFrequent": false,
+      "common": true,
+      "manualInclude": false,
+      "excluded": false,
+      "workUnits": 0.0,
+      "durationDays": 0.0,
+      "manualAmount": 0.0,
+      "coefficient": 1.0,
+      "comment": "Общая подрядная работа; введите договорную сумму"
+    },
+    {
       "id": "РУЧН.01",
       "source": "Ручная",
       "category": "Ручные строки",
@@ -2676,248 +2815,248 @@ export const seedCatalog = {
     {
       "code": "ЭОМ",
       "group": "Электроснабжение / ЭОМ",
-      "monthlySalaryMedian": 205000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 135142.85714285713,
+      "comment": "средняя ставка по ШР от 16.07.2026"
     },
     {
       "code": "ЭО",
       "group": "Электрическое освещение",
-      "monthlySalaryMedian": 205000.0,
-      "comment": "принято как ЭОМ"
+      "monthlySalaryMedian": 135142.85714285713,
+      "comment": "средняя ставка ЭОМ по ШР от 16.07.2026"
     },
     {
       "code": "ЭМ",
       "group": "Силовое электрооборудование",
-      "monthlySalaryMedian": 205000.0,
-      "comment": "принято как ЭОМ"
+      "monthlySalaryMedian": 135142.85714285713,
+      "comment": "средняя ставка ЭОМ по ШР от 16.07.2026"
     },
     {
       "code": "ВК",
       "group": "Внутренние системы водоснабжения и канализации",
-      "monthlySalaryMedian": 170000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 194195.5,
+      "comment": "средняя ставка ВК по ШР от 16.07.2026"
     },
     {
       "code": "ВПВ",
       "group": "Внутренний противопожарный водопровод",
-      "monthlySalaryMedian": 170000.0,
-      "comment": "принято как ВК"
+      "monthlySalaryMedian": 194195.5,
+      "comment": "средняя ставка ВК по ШР от 16.07.2026"
     },
     {
       "code": "ОВ",
       "group": "ОВиК",
-      "monthlySalaryMedian": 176000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "ОВ.ДУ",
       "group": "Противодымная вентиляция",
-      "monthlySalaryMedian": 176000.0,
-      "comment": "принято как ОВ"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "ХС",
       "group": "Холодоснабжение",
-      "monthlySalaryMedian": 176000.0,
-      "comment": "принято как ОВ"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "ИТП",
       "group": "Индивидуальный тепловой пункт",
-      "monthlySalaryMedian": 190000.0,
-      "comment": "расширяемая ставка"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "ТМ",
       "group": "Тепломеханические решения",
-      "monthlySalaryMedian": 190000.0,
-      "comment": "расширяемая ставка"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "ТИ",
       "group": "Тепловая изоляция",
-      "monthlySalaryMedian": 140000.0,
-      "comment": "расширяемая ставка"
+      "monthlySalaryMedian": 193250.0,
+      "comment": "средняя ставка ОВ по ШР от 16.07.2026"
     },
     {
       "code": "АОВ",
       "group": "Автоматизация ОВиК",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "из примера АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АИТП",
       "group": "Автоматизация ИТП",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АХС",
       "group": "Автоматизация ХС",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АК",
       "group": "Автоматизация комплексная",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АСУЗ",
       "group": "Автоматизация и диспетчеризация",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "ДИСП",
       "group": "Диспетчеризация инженерных систем",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "BMS",
       "group": "BMS / система управления зданием",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "СС",
       "group": "Сети связи",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "принято как СКС"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "СКС",
       "group": "Структурированная кабельная система",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "ЛВС",
       "group": "Локальная вычислительная сеть",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "принято как СКС"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "ТФ",
       "group": "Телефония",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "принято как СКС"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "РТ",
       "group": "Радиосвязь / ТВ",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "принято как СКС"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "ЧФ",
       "group": "Часофикация",
-      "monthlySalaryMedian": 138000.0,
-      "comment": "принято как СКС"
+      "monthlySalaryMedian": 161500.0,
+      "comment": "средняя ставка СКС по ШР от 16.07.2026"
     },
     {
       "code": "СОТ",
       "group": "Охранное телевидение",
-      "monthlySalaryMedian": 160000.0,
-      "comment": "принято как КСБ"
+      "monthlySalaryMedian": 189250.0,
+      "comment": "средняя ставка КСБ по ШР от 16.07.2026"
     },
     {
       "code": "СВН",
       "group": "Видеонаблюдение",
-      "monthlySalaryMedian": 160000.0,
-      "comment": "принято как КСБ"
+      "monthlySalaryMedian": 189250.0,
+      "comment": "средняя ставка КСБ по ШР от 16.07.2026"
     },
     {
       "code": "СКУД",
       "group": "Контроль и управление доступом",
-      "monthlySalaryMedian": 160000.0,
-      "comment": "принято как КСБ"
+      "monthlySalaryMedian": 189250.0,
+      "comment": "средняя ставка КСБ по ШР от 16.07.2026"
     },
     {
       "code": "ОС",
       "group": "Охранная сигнализация",
-      "monthlySalaryMedian": 160000.0,
-      "comment": "принято как КСБ"
+      "monthlySalaryMedian": 189250.0,
+      "comment": "средняя ставка КСБ по ШР от 16.07.2026"
     },
     {
       "code": "КСБ",
       "group": "Комплексные системы безопасности",
-      "monthlySalaryMedian": 160000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 189250.0,
+      "comment": "средняя ставка КСБ по ШР от 16.07.2026"
     },
     {
       "code": "ПС",
       "group": "Пожарная сигнализация",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "СОУЭ",
       "group": "СОУЭ",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "СПЗ",
       "group": "Системы пожарной защиты",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "из примера пользователя"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "ПТ",
       "group": "Пожаротушение",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "АУПТ",
       "group": "Автоматическая установка пожаротушения",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "АПТ",
       "group": "Автоматизация пожаротушения",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АГПТ",
       "group": "Газовое пожаротушение",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "АППТ",
       "group": "Порошковое пожаротушение",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "АВПТ",
       "group": "Водяное пожаротушение",
-      "monthlySalaryMedian": 120000.0,
-      "comment": "принято как СПЗ"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "АСКУЭ",
       "group": "Коммерческий учет электроэнергии",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АСКУВ",
       "group": "Коммерческий учет воды",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "АСКУТ",
       "group": "Коммерческий учет тепла",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "ГСВ",
@@ -2928,8 +3067,8 @@ export const seedCatalog = {
     {
       "code": "АГСВ",
       "group": "Автоматизация газоснабжения",
-      "monthlySalaryMedian": 230000.0,
-      "comment": "принято как АСУЗ"
+      "monthlySalaryMedian": 205000.0,
+      "comment": "средняя ставка АСУ по ШР от 16.07.2026"
     },
     {
       "code": "СМ",
@@ -2940,8 +3079,8 @@ export const seedCatalog = {
     {
       "code": "АР",
       "group": "Архитектурные решения",
-      "monthlySalaryMedian": 180000.0,
-      "comment": "расширяемая ставка"
+      "monthlySalaryMedian": 140600.0,
+      "comment": "средняя ставка АР по ШР от 16.07.2026"
     },
     {
       "code": "КР",
@@ -2964,8 +3103,8 @@ export const seedCatalog = {
     {
       "code": "ПБ",
       "group": "Пожарная безопасность",
-      "monthlySalaryMedian": 170000.0,
-      "comment": "расширяемая ставка"
+      "monthlySalaryMedian": 126666.66666666667,
+      "comment": "средняя ставка СПЗ по ШР от 16.07.2026"
     },
     {
       "code": "ООС",
@@ -2994,8 +3133,14 @@ export const seedCatalog = {
     {
       "code": "ГИП",
       "group": "ГИП / управление проектом",
-      "monthlySalaryMedian": 250000.0,
-      "comment": "управленческая ставка"
+      "monthlySalaryMedian": 179112.5,
+      "comment": "средняя ставка ГИП по ШР от 16.07.2026"
+    },
+    {
+      "code": "ТИМ",
+      "group": "Технологии информационного моделирования",
+      "monthlySalaryMedian": 188333.33333333334,
+      "comment": "средняя ставка ТИМ по ШР от 16.07.2026"
     },
     {
       "code": "КОМАНД",
@@ -3605,15 +3750,15 @@ export const seedCatalog = {
     },
     {
       "type": "ОКС",
-      "number": "5.7",
-      "mark": "ТХ",
+      "number": "6",
+      "mark": null,
       "name": "Технологические решения",
       "departmentCode": "ТХ",
       "note": "ПП87: состав разделов ПД для ОКС; раздел 5 раскрыт инженерными подразделами для расчета"
     },
     {
       "type": "ОКС",
-      "number": "6",
+      "number": "7",
       "mark": null,
       "name": "Проект организации строительства",
       "departmentCode": "ПОС",
@@ -3621,7 +3766,7 @@ export const seedCatalog = {
     },
     {
       "type": "ОКС",
-      "number": "7",
+      "number": "8",
       "mark": null,
       "name": "Мероприятия по охране окружающей среды",
       "departmentCode": "ООС",
@@ -3629,7 +3774,7 @@ export const seedCatalog = {
     },
     {
       "type": "ОКС",
-      "number": "8",
+      "number": "9",
       "mark": null,
       "name": "Мероприятия по обеспечению пожарной безопасности",
       "departmentCode": "ПБ",
@@ -3637,7 +3782,7 @@ export const seedCatalog = {
     },
     {
       "type": "ОКС",
-      "number": "9",
+      "number": "10",
       "mark": null,
       "name": "Требования к обеспечению безопасной эксплуатации объектов капитального строительства",
       "departmentCode": "СБЭ",
@@ -3645,11 +3790,27 @@ export const seedCatalog = {
     },
     {
       "type": "ОКС",
-      "number": "10",
+      "number": "11",
+      "mark": null,
+      "name": "Мероприятия по обеспечению доступа инвалидов к объекту капитального строительства",
+      "departmentCode": "АР",
+      "note": "ПП87: состав разделов ПД для ОКС; раздел 5 раскрыт инженерными подразделами для расчета"
+    },
+    {
+      "type": "ОКС",
+      "number": "12",
       "mark": null,
       "name": "Смета на строительство, реконструкцию, капитальный ремонт, снос объекта капитального строительства",
       "departmentCode": "СМ",
-      "note": "ПП87: состав разделов ПД для ОКС; раздел 5 раскрыт инженерными подразделами для расчета"
+      "note": "ПП87: разрабатывается в случаях, указанных в пункте 3(4) Положения"
+    },
+    {
+      "type": "ОКС",
+      "number": "13",
+      "mark": null,
+      "name": "Иная документация в случаях, предусмотренных законодательными и иными нормативными правовыми актами Российской Федерации",
+      "departmentCode": "ГИП",
+      "note": "ПП87: состав уточняется заданием и применимыми НПА"
     },
     {
       "type": "Линейный объект",
