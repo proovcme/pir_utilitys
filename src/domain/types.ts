@@ -226,6 +226,7 @@ export interface EstimateTemplate {
   id: string;
   name: string;
   description?: string;
+  catalogVersion?: number;
   project: ProjectInput;
   lines: EstimateLine[];
   rates: RateGroup[];

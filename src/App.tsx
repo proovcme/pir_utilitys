@@ -1023,6 +1023,7 @@ export function App() {
     const template: EstimateTemplate = {
       id: id(),
       name,
+      catalogVersion: catalog.version,
       project,
       lines: catalog.lines,
       rates: catalog.rates,
@@ -1068,7 +1069,12 @@ export function App() {
 
   function loadTemplate(template: EstimateTemplate) {
     setProject(normalizeProject(template.project));
-    setCatalog((current) => normalizeCatalog({ ...current, lines: template.lines, rates: template.rates }));
+    setCatalog((current) => normalizeCatalog({
+      ...current,
+      version: template.catalogVersion ?? 1,
+      lines: template.lines,
+      rates: template.rates,
+    }));
     setNotice(`Загружен шаблон: ${template.name}`);
     setView("summary");
   }
