@@ -236,6 +236,31 @@ describe("calculateEstimate", () => {
     expect(result.rdPriceWithoutVat).toBeCloseTo(result.basePrice * 0.4 * 1.18, 2);
     expect(result.currentPriceWithoutVat).toBeCloseTo(result.pdPriceWithoutVat + result.rdPriceWithoutVat, 2);
     expect(result.officialBreakdown).toMatchObject({ pdSharePercent: 60, rdSharePercent: 40 });
+
+    const wrongObjectType = calculateEstimate({ ...project, sbcBimObjectGroupId: 1 }, catalog).sbc;
+    expect(wrongObjectType.normativeTrace.valid).toBe(false);
+    expect(wrongObjectType.normativeTrace.blockers.join(" ")).toContain("не соответствует нормативной категории");
+  });
+
+  it("derives the KОН base from the conditioned natural indicator", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcAirConditionedIndicator: 50,
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.airConditioningDesignBasePrice).toBeGreaterThan(0);
+    expect(result.normativeTrace.airConditioningAdditionalBasePrice)
+      .toBeCloseTo(result.normativeTrace.airConditioningDesignBasePrice * 0.031, 2);
+    expect(result.basePrice).toBeGreaterThan(result.normativeTrace.airConditioningDesignBasePrice);
   });
 
   it("applies the selected table coefficient and validates repeated sections", () => {

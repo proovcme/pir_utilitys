@@ -73,7 +73,11 @@ export interface ProjectInput {
   sbcBimRdFromNonBimPd?: boolean;
   /** Контекстный коэффициент из таблиц 3.3.1, 3.5.1, 3.7.1, 3.11.1 или 3.17.1. */
   sbcNormConditionId?: string;
-  /** Стоимость проектирования кондиционируемых помещений в базовом уровне цен, руб. */
+  /** Натуральный показатель только кондиционируемой части объекта. */
+  sbcAirConditionedIndicator?: number;
+  /** Стоимость строительства только кондиционируемой части объекта, руб. */
+  sbcAirConditionedConstructionCost?: number;
+  /** @deprecated Ручной ввод готовой базовой цены, оставлен для совместимости старых расчётов. */
   sbcAirConditioningDesignCost?: number;
   sbcComplexObject?: boolean;
   /** Роль текущей позиции в составе объединённого, встроенного или повторного объекта. */
@@ -268,6 +272,9 @@ export interface SbcResult {
     specialStatusCoefficient: number;
     bimPdCoefficient: number;
     bimRdCoefficient: number;
+    bimPdAdditionalWithoutVat: number;
+    bimRdAdditionalWithoutVat: number;
+    airConditioningDesignBasePrice: number;
     airConditioningAdditionalBasePrice: number;
     totalCoefficient: number;
     blockers: string[];

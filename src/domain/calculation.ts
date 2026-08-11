@@ -24,6 +24,7 @@ import {
   complexRoleLimit,
   get848BimCoefficient,
   get848NormCondition,
+  resolve848BimOptions,
 } from "./fgisPir848Rules";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -350,11 +351,45 @@ function calculateSingleSbcResult(project: ProjectInput, totals: EstimateTotals)
     * appliedSmrCoefficient
     * legacyCoefficient;
 
-  const airConditioningAdditionalBasePrice = isStructuredNorm
-    ? Math.max(0, project.sbcAirConditioningDesignCost ?? 0) * 0.031
-    : 0;
+  const airBreakdownTable = project.sbcFgisTableCode === "3.18"
+    ? breakdownDocument?.tables.find((table) => table.code === project.sbcFgisBreakdownTableCode)
+    : getFgisBreakdownTable(breakdownDocument, project.sbcFgisTableCode);
+  const airBreakdownObject = airBreakdownTable
+    ? (
+        airBreakdownTable.objects.find((item) => item.id === project.sbcFgisBreakdownObjectId)
+        ?? recommendFgisBreakdownObject(airBreakdownTable, project.sbcFgisObjectName ?? "")
+      )
+    : undefined;
+  const conditioningAlreadyIncluded = Boolean((airBreakdownObject?.stages.combined.КОН ?? 0) > 0);
+  let airConditioningDesignBasePrice = 0;
+  let airConditioningBaseExplanation = "";
+  if (isStructuredNorm && !conditioningAlreadyIncluded && method === "natural" && (project.sbcAirConditionedIndicator ?? 0) > 0) {
+    const airResolution = resolveFgisNaturalPriceForProject({
+      ...project,
+      sbcNaturalIndicator: project.sbcAirConditionedIndicator ?? 0,
+    });
+    if (airResolution?.valid) {
+      airConditioningDesignBasePrice = airResolution.priceRub;
+      airConditioningBaseExplanation = `по натуральному показателю кондиционируемой части ${project.sbcAirConditionedIndicator}`;
+    } else {
+      traceWarnings.push(`Дополнение КОН не рассчитано: ${airResolution?.blocker ?? "не удалось определить базовую цену кондиционируемой части"}.`);
+    }
+  } else if (isStructuredNorm && !conditioningAlreadyIncluded && method === "constructionPercent" && (project.sbcAirConditionedConstructionCost ?? 0) > 0) {
+    const rebaseCoefficient = project.sbcConstructionRebaseCoefficient ?? 1;
+    const airBaseConstructionCost = (project.sbcAirConditionedConstructionCost ?? 0) * rebaseCoefficient;
+    const percentTable = tableDocument?.percentTables.find((table) => table.code === project.sbcFgisTableCode);
+    const airInterpolated = percentTable ? interpolateFgisPercent(percentTable, airBaseConstructionCost) : undefined;
+    if (airInterpolated) {
+      airConditioningDesignBasePrice = airBaseConstructionCost * airInterpolated.percent / 100;
+      airConditioningBaseExplanation = `по стоимости строительства кондиционируемой части и нормативу ${roundMoney(airInterpolated.percent)}%`;
+    }
+  } else if (isStructuredNorm && !conditioningAlreadyIncluded) {
+    airConditioningDesignBasePrice = Math.max(0, project.sbcAirConditioningDesignCost ?? 0);
+    if (airConditioningDesignBasePrice > 0) airConditioningBaseExplanation = "по сохранённому ручному значению старого расчёта";
+  }
+  const airConditioningAdditionalBasePrice = airConditioningDesignBasePrice * 0.031;
   if (airConditioningAdditionalBasePrice > 0) {
-    traceWarnings.push("Стоимость раздела «Кондиционирование воздуха» добавлена в размере 3,1% для ПД + РД по п. 25 НЗ № 848/пр.");
+    traceWarnings.push(`Стоимость раздела «КОН — Кондиционирование воздуха» добавлена в размере 3,1% для ПД + РД по п. 25 НЗ № 848/пр; база определена ${airConditioningBaseExplanation}.`);
   }
   const coreBasePrice = basePrice;
   basePrice = coreBasePrice + airConditioningAdditionalBasePrice;
@@ -362,8 +397,20 @@ function calculateSingleSbcResult(project: ProjectInput, totals: EstimateTotals)
   const bimCoefficient = project.sbcInformationModel
     ? get848BimCoefficient(project.sbcBimObjectGroupId)
     : undefined;
+  const bimOptions = resolve848BimOptions(project.sbcFgisTableCode, project.sbcFgisObjectName);
   if (isStructuredNorm && project.sbcInformationModel && !bimCoefficient) {
     blockers.push("Выберите вид объекта для коэффициентов информационной модели из приложения № 2.");
+  } else if (
+    isStructuredNorm
+    && project.sbcInformationModel
+    && project.sbcFgisTableCode !== "3.18"
+    && bimCoefficient
+    && (
+      !bimOptions.options.some((row) => row.id === bimCoefficient.id)
+      || (bimOptions.exact && bimOptions.recommendedId !== bimCoefficient.id)
+    )
+  ) {
+    blockers.push("Выбранный вид объекта для информационной модели не соответствует нормативной категории рассчитываемого объекта.");
   }
   const bimPdCoefficient = bimCoefficient?.pd ?? 1;
   const bimRdCoefficient = bimCoefficient?.rd ?? 1;
@@ -399,6 +446,12 @@ function calculateSingleSbcResult(project: ProjectInput, totals: EstimateTotals)
   const pdPriceWithoutVat = pdBasePrice * currentIndex;
   const rdPriceWithoutVat = rdBasePrice * currentIndex;
   const otherPriceWithoutVat = otherBasePrice * currentIndex;
+  const bimPdAdditionalWithoutVat = project.sbcInformationModel && bimCoefficient && !bimRdOnly
+    ? conditionedBasePrice * 0.6 * Math.max(0, bimPdCoefficient - 1) * currentIndex
+    : 0;
+  const bimRdAdditionalWithoutVat = project.sbcInformationModel && bimCoefficient
+    ? conditionedBasePrice * (bimRdOnly ? 0.6 : 0.4) * Math.max(0, bimRdCoefficient - 1) * currentIndex
+    : 0;
   const pdCorePriceWithoutVat = (
     project.sbcInformationModel && bimCoefficient
       ? (bimRdOnly ? 0 : conditionedCoreBasePrice * 0.6 * bimPdCoefficient)
@@ -510,6 +563,9 @@ function calculateSingleSbcResult(project: ProjectInput, totals: EstimateTotals)
       specialStatusCoefficient,
       bimPdCoefficient,
       bimRdCoefficient,
+      bimPdAdditionalWithoutVat: roundMoney(bimPdAdditionalWithoutVat),
+      bimRdAdditionalWithoutVat: roundMoney(bimRdAdditionalWithoutVat),
+      airConditioningDesignBasePrice: roundMoney(airConditioningDesignBasePrice),
       airConditioningAdditionalBasePrice: roundMoney(airConditioningAdditionalBasePrice),
       totalCoefficient: roundMoney(totalCoefficient),
       blockers,
@@ -552,6 +608,12 @@ function applyPzuCoefficient(
 
   const pdReduction = pzu.pdPriceWithoutVat * (1 - coefficient);
   const rdReduction = pzu.rdPriceWithoutVat * (1 - coefficient);
+  const pdBimReduction = result.normativeTrace.bimPdCoefficient > 1
+    ? pzu.pdPriceWithoutVat * (1 - 1 / result.normativeTrace.bimPdCoefficient) * (1 - coefficient)
+    : 0;
+  const rdBimReduction = result.normativeTrace.bimRdCoefficient > 1
+    ? pzu.rdPriceWithoutVat * (1 - 1 / result.normativeTrace.bimRdCoefficient) * (1 - coefficient)
+    : 0;
   const reductionWithoutVat = pdReduction + rdReduction;
   const currentPriceWithoutVat = Math.max(0, result.currentPriceWithoutVat - reductionWithoutVat);
   const currentIndex = project.sbcIndexToCurrent ?? 1;
@@ -574,6 +636,11 @@ function applyPzuCoefficient(
       rdPriceWithoutVat: roundMoney(Math.max(0, result.rdPriceWithoutVat - rdReduction)),
       differenceWithoutVat: roundMoney(totals.totalWithoutVat - currentPriceWithoutVat),
       differenceWithVat: roundMoney(totals.totalWithVat - currentPriceWithVat),
+      normativeTrace: {
+        ...result.normativeTrace,
+        bimPdAdditionalWithoutVat: roundMoney(Math.max(0, result.normativeTrace.bimPdAdditionalWithoutVat - pdBimReduction)),
+        bimRdAdditionalWithoutVat: roundMoney(Math.max(0, result.normativeTrace.bimRdAdditionalWithoutVat - rdBimReduction)),
+      },
       officialBreakdown: {
         ...result.officialBreakdown,
         sections: result.officialBreakdown.sections.map((section) => section.code === "ПЗУ"
@@ -671,6 +738,9 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
       specialStatusCoefficient: 1,
       bimPdCoefficient: 1,
       bimRdCoefficient: 1,
+      bimPdAdditionalWithoutVat: roundMoney(sum((item) => item.normativeTrace.bimPdAdditionalWithoutVat)),
+      bimRdAdditionalWithoutVat: roundMoney(sum((item) => item.normativeTrace.bimRdAdditionalWithoutVat)),
+      airConditioningDesignBasePrice: roundMoney(sum((item) => item.normativeTrace.airConditioningDesignBasePrice)),
       airConditioningAdditionalBasePrice: roundMoney(sum((item) => item.normativeTrace.airConditioningAdditionalBasePrice)),
       totalCoefficient: roundMoney(totalCoefficient),
       blockers,

@@ -7,6 +7,13 @@ export interface BimCoefficientRow {
   rd: number;
 }
 
+export interface BimOptionResolution {
+  options: BimCoefficientRow[];
+  recommendedId?: number;
+  exact: boolean;
+  note: string;
+}
+
 export interface NormCondition {
   id: string;
   label: string;
@@ -68,6 +75,90 @@ export const fgisPir848BimCoefficients: BimCoefficientRow[] = [
   { id: 51, name: "Пожарная часть, депо или горноспасательная часть", pd: 1.15, rd: 1.16 },
   { id: 52, name: "Баня или общественная уборная", pd: 1.15, rd: 1.16 },
 ];
+
+const bimIdsByPriceTable: Record<string, number[]> = {
+  "3.1": [1, 2, 3],
+  "3.2": [4, 5, 6],
+  "3.3": [7],
+  "3.4": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+  "3.5": [19, 20],
+  "3.6": [21],
+  "3.7": [22, 23, 24, 25, 26, 27, 28, 29],
+  "3.8": [30, 31, 32, 33, 34],
+  "3.9": [35, 36, 37, 38, 39, 40],
+  "3.10": [41, 42],
+  "3.11": [43],
+  "3.12": [44],
+  "3.13": [45, 46],
+  "3.14": [47, 48, 49],
+  "3.15": [50],
+  "3.16": [51],
+  "3.17": [52],
+};
+
+const ignoredBimWords = new Set([
+  "здание", "здания", "сооружение", "сооружения", "объект", "объекты", "капитального",
+  "строительства", "для", "или", "иные", "иной", "числе", "крытого", "крытая", "крытый",
+]);
+
+function normalizedBimRoots(value: string): Set<string> {
+  return new Set(
+    value
+      .toLocaleLowerCase("ru-RU")
+      .replace(/ё/g, "е")
+      .split(/[^а-я0-9]+/)
+      .filter((word) => word.length >= 5 && !ignoredBimWords.has(word))
+      .map((word) => word.slice(0, 7)),
+  );
+}
+
+function bimSimilarity(objectName: string, row: BimCoefficientRow): number {
+  const objectRoots = normalizedBimRoots(objectName);
+  const rowRoots = normalizedBimRoots(row.name);
+  if (!objectRoots.size || !rowRoots.size) return 0;
+  let matches = 0;
+  objectRoots.forEach((root) => { if (rowRoots.has(root)) matches += 1; });
+  return matches / Math.min(objectRoots.size, rowRoots.size);
+}
+
+export function resolve848BimOptions(tableCode?: string, objectName?: string): BimOptionResolution {
+  if (!tableCode || tableCode === "3.18") {
+    return {
+      options: fgisPir848BimCoefficients,
+      exact: false,
+      note: "Для таблицы 3.18 выберите сопоставимый объект по функциональным, объёмно-планировочным или конструктивным характеристикам и зафиксируйте обоснование.",
+    };
+  }
+
+  const allowedIds = bimIdsByPriceTable[tableCode] ?? [];
+  const options = fgisPir848BimCoefficients.filter((row) => allowedIds.includes(row.id));
+  if (!options.length) {
+    return {
+      options: [],
+      exact: false,
+      note: "Для выбранной нормативной таблицы в приложении № 2 нет подходящей строки.",
+    };
+  }
+
+  const ranked = options
+    .map((row) => ({ row, score: bimSimilarity(objectName ?? "", row) }))
+    .sort((left, right) => right.score - left.score || left.row.id - right.row.id);
+  const best = ranked[0];
+  const second = ranked[1];
+  const exact = Boolean(best && best.score >= 0.5 && (!second || best.score - second.score >= 0.2));
+  const recommendedId = exact ? best.row.id : options.length === 1 && best.score > 0 ? best.row.id : undefined;
+
+  return {
+    options,
+    recommendedId,
+    exact,
+    note: recommendedId
+      ? "Строка приложения № 2 сопоставлена с выбранным объектом автоматически."
+      : options.length === 1
+        ? "В этой категории есть одна строка приложения № 2, но для объекта требуется подтвердить сопоставимость."
+        : "Выберите только из вариантов той же нормативной категории; при отсутствии точного наименования подтвердите сопоставимость объекта.",
+  };
+}
 
 const conditionsByTable: Record<string, NormCondition[]> = {
   "3.3": [

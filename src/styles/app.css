@@ -722,6 +722,17 @@ main {
   border: 0;
 }
 
+.fgis-fixed-scope,
+.fgis-fixed-document { display: flex; align-items: center; gap: 11px; min-height: 48px; padding: 11px 13px; border: 1px solid #d8e1ed; border-radius: 8px; background: #f8fafc; }
+.fgis-fixed-scope svg { flex: 0 0 auto; color: #8f2330; }
+.fgis-fixed-scope div,
+.fgis-fixed-document { flex-direction: column; align-items: flex-start; gap: 2px; }
+.fgis-fixed-scope strong,
+.fgis-fixed-document strong { color: #263142; font-size: 13px; }
+.fgis-fixed-scope span,
+.fgis-fixed-document span,
+.fgis-fixed-document small { color: #667085; font-size: 11px; line-height: 1.4; }
+
 .fgis-manual-values summary {
   color: #667085;
   cursor: pointer;
@@ -754,12 +765,34 @@ main {
   border-bottom: 1px solid #dfe5ed;
 }
 
-.fgis-advanced .fgis-input-grid {
-  padding: 12px;
+.fgis-condition-list { display: grid; gap: 0; }
+.fgis-condition-item { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid #e3e8ef; }
+.fgis-condition-item:last-child { border-bottom: 0; }
+.fgis-condition-title { display: grid; gap: 2px; }
+.fgis-condition-title strong { color: #344054; font-size: 13px; }
+.fgis-condition-title span { color: #667085; font-size: 11px; line-height: 1.4; }
+.fgis-option-stack { display: grid; gap: 7px; padding-left: 8px; }
+.fgis-option-child { display: grid; gap: 10px; margin-left: 30px; padding: 11px 12px; border-left: 2px solid #c9d2dd; background: #fff; }
+.fgis-option-child > strong { color: #344054; font-size: 12px; }
+.fgis-option-child > small { color: #667085; font-size: 11px; }
+.fgis-condition-fields,
+.fgis-structure-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+.fgis-structure-block {
+  margin: 16px 0 0 54px;
+  overflow: hidden;
+  border: 1px solid #d8e1ed;
+  border-radius: 9px;
+  background: #fff;
 }
+.fgis-structure-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px; }
+.fgis-structure-heading h3 { margin: 3px 0 4px; color: #172033; font-size: 16px; }
+.fgis-structure-heading p { max-width: 650px; margin: 0; color: #667085; font-size: 11px; line-height: 1.45; }
+.fgis-structure-heading > .toggle { flex: 0 0 auto; }
+.fgis-structure-settings { padding: 0 16px 16px; border-top: 1px solid #edf0f4; padding-top: 14px; }
 
 .fgis-complex-basket {
-  margin: 0 12px 12px;
+  margin: 0 16px 16px;
   overflow: hidden;
   border: 1px solid #d8e1ed;
   border-radius: 9px;
@@ -1149,6 +1182,46 @@ main {
 .fgis-stage-totals span { color: #667085; font-size: 11px; font-weight: 700; }
 .fgis-stage-totals strong { color: #172033; font-size: 17px; font-variant-numeric: tabular-nums; }
 
+.fgis-factor-status,
+.fgis-bim-match,
+.fgis-conditioning-result {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.fgis-factor-status strong,
+.fgis-bim-match strong,
+.fgis-conditioning-result strong { color: #263142; font-size: 13px; }
+.fgis-factor-status span,
+.fgis-bim-match span,
+.fgis-conditioning-result span { color: #667085; font-size: 11px; font-weight: 750; }
+.fgis-factor-status small,
+.fgis-bim-match small,
+.fgis-conditioning-result small { color: #667085; font-size: 11px; line-height: 1.45; }
+.fgis-factor-status.is-active { border-color: #bfd8c8; background: #f4faf6; }
+.fgis-factor-status.is-active strong { color: #277247; }
+.fgis-bim-match { border-left: 3px solid #8f2330; background: #fbf8f8; }
+.fgis-conditioning-input { display: grid; gap: 10px; }
+.fgis-conditioning-result strong { font-variant-numeric: tabular-nums; }
+
+.fgis-bim-impact {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.6fr) minmax(0, 1.4fr);
+  gap: 18px;
+  margin: 0 20px 14px;
+  padding: 12px 14px;
+  border: 1px solid #e1d4d6;
+  border-radius: 8px;
+  background: #fbf8f8;
+}
+.fgis-bim-impact div { display: grid; gap: 3px; }
+.fgis-bim-impact span { color: #667085; font-size: 11px; font-weight: 750; }
+.fgis-bim-impact strong { color: #7f1d1d; font-size: 18px; font-variant-numeric: tabular-nums; }
+.fgis-bim-impact p { align-self: center; margin: 0; color: #5f6877; font-size: 11px; line-height: 1.5; }
+
 .fgis-breakdown-scroll { overflow-x: auto; border-top: 1px solid #e7ecf2; border-bottom: 1px solid #e7ecf2; }
 .fgis-breakdown-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .fgis-breakdown-table th,
@@ -1156,7 +1229,8 @@ main {
 .fgis-breakdown-table thead th { color: #475467; background: #f6f8fb; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 .fgis-breakdown-table tbody th,
 .fgis-breakdown-table tfoot th { min-width: 270px; text-align: left; white-space: normal; }
-.fgis-breakdown-table tbody th b { display: inline-block; min-width: 40px; color: #667085; }
+.fgis-breakdown-table tbody th b { color: #667085; }
+.fgis-breakdown-table tbody th i { margin: 0 7px; color: #98a2b3; font-style: normal; font-weight: 500; }
 .fgis-breakdown-table tbody th span { color: #344054; font-weight: 650; }
 .fgis-breakdown-table tbody tr:hover td,
 .fgis-breakdown-table tbody tr:hover th { background: #f8fafc; }
@@ -1350,14 +1424,21 @@ main {
   .public-pir-shell .fgis-select-grid,
   .public-pir-shell .fgis-input-grid,
   .public-pir-shell .fgis-table-choice-grid,
-  .public-pir-shell .fgis-indicator-workbench {
+  .public-pir-shell .fgis-indicator-workbench,
+  .public-pir-shell .fgis-condition-fields,
+  .public-pir-shell .fgis-structure-settings,
+  .public-pir-shell .fgis-bim-impact {
     grid-template-columns: 1fr;
   }
 
-  .public-pir-shell .fgis-advanced {
+  .public-pir-shell .fgis-advanced,
+  .public-pir-shell .fgis-structure-block {
     margin-left: 0;
   }
 
+  .public-pir-shell .fgis-structure-heading { align-items: flex-start; flex-direction: column; }
+  .public-pir-shell .fgis-structure-heading > .toggle { width: 100%; }
+  .public-pir-shell .fgis-option-child { margin-left: 20px; }
   .public-pir-shell .fgis-complex-heading { flex-direction: column; }
   .public-pir-shell .fgis-complex-add { width: 100%; }
   .public-pir-shell .fgis-complex-draft { grid-template-columns: 1fr; }

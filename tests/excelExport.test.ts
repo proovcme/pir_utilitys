@@ -128,6 +128,8 @@ describe("exportEstimateWorkbook", () => {
     const bimLabels = bimCalculation.getColumn("A").values.map(String);
     expect(bimLabels).toContain("Коэффициент BIM для П");
     expect(bimLabels).toContain("Коэффициент BIM для Р");
+    expect(bimLabels).toContain("Увеличение ПД из-за информационной модели");
+    expect(bimLabels).toContain("Увеличение РД из-за информационной модели");
 
     const complexProject = {
       ...project,

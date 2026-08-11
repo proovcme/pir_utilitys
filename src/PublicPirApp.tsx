@@ -106,7 +106,7 @@ export function PublicPirApp() {
       </header>
 
       <main className="public-pir-main">
-        <FgisPirCalculator project={project} result={result} draftResult={draftResult} onChange={patchProject} onExport={exportXlsx} exporting={exporting} />
+        <FgisPirCalculator project={project} result={result} draftResult={draftResult} onChange={patchProject} onExport={exportXlsx} exporting={exporting} fixedNormGuid="b90117ab-5223-4a7a-89ae-a8bcbb88f689" />
       </main>
 
       <footer className="public-pir-footer">

@@ -118,7 +118,11 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Коэффициент специального статуса", result.normativeTrace.specialStatusCoefficient, "1,3 при одновременном выполнении установленных условий и в период действия нормы."],
     ["Коэффициент BIM для П", result.normativeTrace.bimPdCoefficient, "Таблица 1 приложения № 2 НЗ № 848/пр."],
     ["Коэффициент BIM для Р", result.normativeTrace.bimRdCoefficient, "Таблица 1 приложения № 2 НЗ № 848/пр."],
-    ["Дополнительно: кондиционирование", result.normativeTrace.airConditioningAdditionalBasePrice, "3,1% для П + Р по п. 25, если раздел отсутствует в таблице распределения."],
+    ["База проектирования кондиционируемой части", result.normativeTrace.airConditioningDesignBasePrice, "Определена калькулятором по показателю кондиционируемой части и той же нормативной таблице."],
+    ["Дополнение КОН — кондиционирование воздуха", result.normativeTrace.airConditioningAdditionalBasePrice, "3,1% для П + Р по п. 25, если раздел отсутствует в таблице распределения."],
+    ["Увеличение ПД из-за информационной модели", result.normativeTrace.bimPdAdditionalWithoutVat, "Справочно: уже включено в стоимость ПД и не прибавляется повторно."],
+    ["Увеличение РД из-за информационной модели", result.normativeTrace.bimRdAdditionalWithoutVat, "Справочно: уже включено в стоимость РД и не прибавляется повторно."],
+    ["Увеличение стоимости из-за информационной модели", result.normativeTrace.bimPdAdditionalWithoutVat + result.normativeTrace.bimRdAdditionalWithoutVat, "Справочный итог влияния информационной модели; это не отдельный раздел документации."],
     ["Общий коэффициент", result.normativeTrace.totalCoefficient, "Произведение всех применённых нормативных коэффициентов."],
     ["Блокирующие условия", result.normativeTrace.blockers.join("; "), "Причины, по которым итоговый расчёт остановлен."],
     ["Предупреждения", result.normativeTrace.warnings.join("; "), "Условия, которые нужно подтвердить документами."],
@@ -128,6 +132,11 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   [9, 10, 12, 14, 17, 19, 21, 23, 25].forEach((row) => { calculation.getCell(`B${row}`).numFmt = rub; });
   [13, 20, 22, 24, 34].forEach((row) => { calculation.getCell(`B${row}`).numFmt = percent; });
   calculation.getCell("B26").value = { text: project.sbcFgisSourceUrl, hyperlink: project.sbcFgisSourceUrl };
+  rows.forEach(([label], index) => {
+    if (String(label).includes("кондиционируем") || String(label).includes("информационной модели")) {
+      calculation.getCell(`B${index + 5}`).numFmt = rub;
+    }
+  });
 
   if (result.complexBreakdown) {
     const complex = workbook.addWorksheet("Состав комплекса", { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] });

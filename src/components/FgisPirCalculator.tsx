@@ -21,9 +21,9 @@ import {
 import type { FgisPirKind, ProjectInput, SbcResult } from "../domain/types";
 import {
   complexRoleLimit,
-  fgisPir848BimCoefficients,
   get848BimCoefficient,
   get848NormConditions,
+  resolve848BimOptions,
 } from "../domain/fgisPir848Rules";
 
 const currency = new Intl.NumberFormat("ru-RU", {
@@ -108,6 +108,7 @@ export function FgisPirCalculator({
   onCompare,
   onExport,
   exporting = false,
+  fixedNormGuid,
 }: {
   project: ProjectInput;
   result: SbcResult;
@@ -116,11 +117,15 @@ export function FgisPirCalculator({
   onCompare?: () => void;
   onExport?: () => void;
   exporting?: boolean;
+  fixedNormGuid?: string;
 }) {
   const [editingComponentId, setEditingComponentId] = useState<string | null>(null);
   const period = getFgisPeriod(project.sbcFgisPeriodId);
-  const kind = project.sbcFgisKind;
-  const documents = useMemo(() => getFgisDocuments(period, kind), [kind, period]);
+  const kind: FgisPirKind = fixedNormGuid ? "design" : project.sbcFgisKind;
+  const documents = useMemo(
+    () => getFgisDocuments(period, kind).filter((document) => !fixedNormGuid || document.guid === fixedNormGuid),
+    [fixedNormGuid, kind, period],
+  );
   const firstStructuredDocument = documents.find((document) => getFgisTableDocument(document.guid));
   const selectedDocument =
     documents.find((document) => document.guid === project.sbcFgisNormGuid) ??
@@ -182,6 +187,15 @@ export function FgisPirCalculator({
   const normConditions = get848NormConditions(selectedTable?.code ?? selectedPercentTable?.code);
   const selectedNormCondition = normConditions.find((item) => item.id === project.sbcNormConditionId);
   const selectedBimCoefficient = get848BimCoefficient(project.sbcBimObjectGroupId);
+  const bimResolution = resolve848BimOptions(
+    selectedTable?.code ?? selectedPercentTable?.code,
+    selectedRow?.objectName ?? project.sbcFgisObjectName ?? selectedObject,
+  );
+  const selectedBimIsCompatible = Boolean(
+    selectedBimCoefficient
+    && bimResolution.options.some((item) => item.id === selectedBimCoefficient.id)
+    && (!bimResolution.exact || bimResolution.recommendedId === selectedBimCoefficient.id),
+  );
   const complexRole = project.sbcComplexRole ?? "main";
   const complexLimit = complexRoleLimit(complexRole);
   const conditioningIncluded = Boolean(
@@ -190,6 +204,23 @@ export function FgisPirCalculator({
   const complexComponents = project.sbcComplexComponents ?? [];
   const currentDraftResult = draftResult ?? result;
   const supportsComplexBasket = selectedDocument?.guid === "b90117ab-5223-4a7a-89ae-a8bcbb88f689";
+  const constrainedFactorCount = new Set(project.sbcConstrainedSiteFactors ?? []).size;
+  const conditionedNaturalResolution = selectedTable && (project.sbcAirConditionedIndicator ?? 0) > 0
+    ? resolveFgisNaturalPrice(selectedTable, selectedObject, project.sbcAirConditionedIndicator ?? 0)
+    : undefined;
+  const conditionedInterpolatedPercent = selectedPercentTable && (project.sbcAirConditionedConstructionCost ?? 0) > 0
+    ? interpolateFgisPercent(
+        selectedPercentTable,
+        (project.sbcAirConditionedConstructionCost ?? 0) * (project.sbcConstructionRebaseCoefficient ?? 1),
+      )
+    : undefined;
+  const conditionedDesignBasePreview = conditionedNaturalResolution?.valid
+    ? conditionedNaturalResolution.priceRub
+    : conditionedInterpolatedPercent
+      ? (project.sbcAirConditionedConstructionCost ?? 0)
+        * (project.sbcConstructionRebaseCoefficient ?? 1)
+        * conditionedInterpolatedPercent.percent / 100
+      : 0;
 
   useEffect(() => {
     if (!categories.includes(category)) setCategory(selectedDocument?.category ?? categories[0] ?? "");
@@ -198,6 +229,17 @@ export function FgisPirCalculator({
   useEffect(() => {
     if (project.sbcNormConditionId && !selectedNormCondition) onChange({ sbcNormConditionId: "" });
   }, [onChange, project.sbcNormConditionId, selectedNormCondition]);
+
+  useEffect(() => {
+    if (!project.sbcInformationModel) return;
+    if (bimResolution.recommendedId && (!selectedBimIsCompatible || bimResolution.exact)) {
+      if (project.sbcBimObjectGroupId !== bimResolution.recommendedId) {
+        onChange({ sbcBimObjectGroupId: bimResolution.recommendedId });
+      }
+      return;
+    }
+    if (project.sbcBimObjectGroupId && !selectedBimIsCompatible) onChange({ sbcBimObjectGroupId: undefined });
+  }, [bimResolution.exact, bimResolution.recommendedId, onChange, project.sbcBimObjectGroupId, project.sbcInformationModel, selectedBimIsCompatible]);
 
   useEffect(() => {
     if (!selectedDocument) return;
@@ -529,7 +571,7 @@ export function FgisPirCalculator({
         <div className="fgis-sync-state">
           <CheckCircle2 size={18} />
           <div>
-            <strong>{fgisPirSnapshot.download.documentCount} документов скачано</strong>
+            <strong>{fixedNormGuid ? "Норматив № 848/пр загружен" : `${fgisPirSnapshot.download.documentCount} документов скачано`}</strong>
             <span>снимок {new Date(fgisPirSnapshot.fetchedAt).toLocaleDateString("ru-RU")}</span>
           </div>
         </div>
@@ -551,7 +593,7 @@ export function FgisPirCalculator({
       <details className="fgis-user-guide" open>
         <summary><span>Как выполнить расчёт</span><small>Пошаговое руководство</small></summary>
         <ol>
-          <li><b>Выберите норматив.</b> Найдите назначение объекта и документ, который прямо к нему относится.</li>
+          <li><b>{fixedNormGuid ? "Выберите таблицу." : "Выберите норматив."}</b> {fixedNormGuid ? "Найдите назначение проектируемого объекта в таблицах 3.1–3.17; таблицу 3.18 используйте только при его отсутствии." : "Найдите назначение объекта и документ, который прямо к нему относится."}</li>
           <li><b>Выберите объект.</b> Укажите строку таблицы, наиболее точно совпадающую с проектируемым объектом.</li>
           <li><b>Введите показатель.</b> Площадь, вместимость, объём или другой показатель берите из задания на проектирование либо утверждённых ТЭП.</li>
           <li><b>Проверьте условия.</b> Применяйте коэффициенты только при наличии основания в выбранном нормативе.</li>
@@ -565,7 +607,9 @@ export function FgisPirCalculator({
             <span className="fgis-step-number">01</span>
             <div className="fgis-step-content">
               <h3>Что считаем</h3>
-              <div className="fgis-segment" role="group" aria-label="Вид работ">
+              {fixedNormGuid ? (
+                <div className="fgis-fixed-scope"><FileCheck2 size={19} /><div><strong>Проектные работы по нормативу № 848/пр</strong><span>Здания и сооружения непроизводственного назначения</span></div></div>
+              ) : <div className="fgis-segment" role="group" aria-label="Вид работ">
                 <button className={kind === "design" ? "active" : ""} onClick={() => selectKind("design")}>
                   Проектные работы
                   <small>{period.design.documents.length} нормативов</small>
@@ -574,7 +618,7 @@ export function FgisPirCalculator({
                   Инженерные изыскания
                   <small>{period.survey.documents.length} нормативов</small>
                 </button>
-              </div>
+              </div>}
             </div>
           </section>
 
@@ -583,20 +627,22 @@ export function FgisPirCalculator({
             <div className="fgis-step-content">
               <h3>Норматив ФГИС</h3>
               <div className="fgis-select-grid">
-                <label className="field">
+                {!fixedNormGuid ? <label className="field">
                   <span>Категория</span>
                   <select value={category} onChange={(event) => selectCategory(event.target.value)}>
                     {categories.map((item) => <option key={item}>{item}</option>)}
                   </select>
-                </label>
-                <label className="field">
+                </label> : null}
+                {!fixedNormGuid ? <label className="field">
                   <span>Документ</span>
                   <select value={selectedDocument.guid} onChange={(event) => selectDocument(event.target.value)}>
                     {categoryDocuments.map((document) => (
                       <option key={document.guid} value={document.guid}>{document.name}</option>
                     ))}
                   </select>
-                </label>
+                </label> : (
+                  <div className="fgis-fixed-document"><span>Документ</span><strong>{selectedDocument.name}</strong><small>{selectedDocument.approvingAct}</small></div>
+                )}
                 <label className="field">
                   <span>Текущий уровень цен</span>
                   <select value={period.id} onChange={(event) => selectPeriod(Number(event.target.value))}>
@@ -816,79 +862,141 @@ export function FgisPirCalculator({
 
           <details className="fgis-advanced">
             <summary>Условия проектирования и срок</summary>
-            <div className="fgis-input-grid">
+            <div className="fgis-condition-list">
               {breakdownDocument ? (
                 <>
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcHeritageProtectionZone)} onChange={(event) => onChange({ sbcHeritageProtectionZone: event.target.checked })} /><span>Строительство в зоне охраны объекта культурного наследия</span></label>
-                  {constrainedSiteFactors.map(([id, label]) => (
-                    <label className="toggle" key={id}><input type="checkbox" checked={(project.sbcConstrainedSiteFactors ?? []).includes(id)} onChange={(event) => toggleConstrainedFactor(id, event.target.checked)} /><span>{label}</span></label>
-                  ))}
-                  <small className="field-hint">Коэффициент 1,1 применяется для зоны охраны либо при наличии не менее трёх из пяти факторов стеснённости.</small>
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcSpecialDefenseStatus)} onChange={(event) => onChange({ sbcSpecialDefenseStatus: event.target.checked })} /><span>Специальный объект обороны или безопасности</span></label>
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcParallelDesignConstruction)} onChange={(event) => onChange({ sbcParallelDesignConstruction: event.target.checked })} /><span>Проектирование и строительство выполняются параллельно</span></label>
-                  {project.sbcSpecialDefenseStatus || project.sbcParallelDesignConstruction ? (
-                    <label className="field">
-                      <span>Дата составления расчёта</span>
-                      <input type="date" value={project.sbcCalculationDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => onChange({ sbcCalculationDate: event.target.value })} />
-                      <small className="field-hint">Коэффициент 1,3 действует с 17.05.2026 для объектов из специального перечня; особенности по постановлению № 223 действуют до 31.12.2026.</small>
-                    </label>
-                  ) : null}
+                  <div className="fgis-condition-item">
+                    <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcHeritageProtectionZone)} onChange={(event) => onChange({ sbcHeritageProtectionZone: event.target.checked })} /><span>Строительство в зоне охраны объекта культурного наследия</span></label>
+                    {project.sbcHeritageProtectionZone ? <div className="fgis-option-child"><strong>Применяется K 1,1</strong><small>Зона охраны является самостоятельным основанием по п. 17.</small></div> : null}
+                  </div>
+
+                  <div className="fgis-condition-item">
+                    <div className="fgis-condition-title"><strong>Стеснённость строительной площадки</strong><span>Отметьте фактически существующие признаки</span></div>
+                    <div className="fgis-option-stack">
+                      {constrainedSiteFactors.map(([id, label]) => (
+                        <label className="toggle" key={id}><input type="checkbox" checked={(project.sbcConstrainedSiteFactors ?? []).includes(id)} onChange={(event) => toggleConstrainedFactor(id, event.target.checked)} /><span>{label}</span></label>
+                      ))}
+                    </div>
+                    <div className={`fgis-factor-status ${constrainedFactorCount >= 3 ? "is-active" : ""}`}>
+                      <strong>{constrainedFactorCount >= 3 ? "Коэффициент 1,1 применяется" : `${constrainedFactorCount} из 3 — коэффициент пока не применяется`}</strong>
+                      <span>Одна галочка цену не меняет. Увеличение на 10% включается при трёх и более признаках.</span>
+                    </div>
+                  </div>
+
+                  <div className="fgis-condition-item">
+                    <div className="fgis-condition-title"><strong>Специальный объект и параллельное строительство</strong><span>Коэффициент действует только при одновременном выполнении обоих условий</span></div>
+                    <div className="fgis-option-stack">
+                      <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcSpecialDefenseStatus)} onChange={(event) => onChange({ sbcSpecialDefenseStatus: event.target.checked })} /><span>Объект включён в специальный перечень обороны или безопасности</span></label>
+                      <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcParallelDesignConstruction)} onChange={(event) => onChange({ sbcParallelDesignConstruction: event.target.checked })} /><span>Проектирование и строительство выполняются параллельно</span></label>
+                    </div>
+                    {project.sbcSpecialDefenseStatus || project.sbcParallelDesignConstruction ? (
+                      <div className="fgis-option-child">
+                        <label className="field">
+                          <span>Дата составления расчёта</span>
+                          <input type="date" value={project.sbcCalculationDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => onChange({ sbcCalculationDate: event.target.value })} />
+                          <small className="field-hint">K 1,3 включится только при обеих галочках и действующей на эту дату норме.</small>
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+
                   {normConditions.length ? (
-                    <label className="field">
-                      <span>Специальное условие выбранной таблицы</span>
-                      <select value={selectedNormCondition?.id ?? ""} onChange={(event) => onChange({ sbcNormConditionId: event.target.value })}>
-                        <option value="">Нет</option>
-                        {normConditions.map((item) => <option key={item.id} value={item.id}>{item.label} · K {number.format(item.coefficient)}</option>)}
-                      </select>
-                      <small className="field-hint">Показываются только коэффициенты, предусмотренные таблицей {selectedTable?.code ?? selectedPercentTable?.code} НЗ № 848/пр.</small>
-                    </label>
-                  ) : null}
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcInformationModel)} onChange={(event) => onChange({ sbcInformationModel: event.target.checked })} /><span>Требуется информационная модель</span></label>
-                  {project.sbcInformationModel ? (
-                    <>
-                      <label className="field">
-                        <span>Вид объекта для информационной модели</span>
-                        <select value={selectedBimCoefficient?.id ?? ""} onChange={(event) => onChange({ sbcBimObjectGroupId: Number(event.target.value) || undefined })}>
-                          <option value="">Выберите строку приложения № 2</option>
-                          {fgisPir848BimCoefficients.map((item) => <option key={item.id} value={item.id}>{item.id}. {item.name}</option>)}
+                    <div className="fgis-condition-item"><label className="field">
+                        <span>Специальное условие выбранной таблицы</span>
+                        <select value={selectedNormCondition?.id ?? ""} onChange={(event) => onChange({ sbcNormConditionId: event.target.value })}>
+                          <option value="">Нет</option>
+                          {normConditions.map((item) => <option key={item.id} value={item.id}>{item.label} · K {number.format(item.coefficient)}</option>)}
                         </select>
-                        <small className="field-hint">Коэффициенты П и Р берутся отдельно из официальной таблицы: {selectedBimCoefficient ? `П — ${number.format(selectedBimCoefficient.pd)}, Р — ${number.format(selectedBimCoefficient.rd)}` : "выберите ближайший вид объекта"}.</small>
-                      </label>
+                        <small className="field-hint">Только условия таблицы {selectedTable?.code ?? selectedPercentTable?.code} НЗ № 848/пр.</small>
+                      </label></div>
+                  ) : null}
+
+                  <div className="fgis-condition-item">
+                    <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcInformationModel)} onChange={(event) => onChange({
+                      sbcInformationModel: event.target.checked,
+                      sbcBimObjectGroupId: event.target.checked
+                        ? bimResolution.recommendedId ?? (selectedBimIsCompatible ? project.sbcBimObjectGroupId : undefined)
+                        : project.sbcBimObjectGroupId,
+                    })} /><span>Требуется информационная модель</span></label>
+                    {project.sbcInformationModel ? (
+                      <div className="fgis-option-child">
+                      {bimResolution.exact && selectedBimCoefficient ? (
+                        <div className="fgis-bim-match">
+                          <span>Подобрано по выбранному объекту</span>
+                          <strong>{selectedBimCoefficient.id}. {selectedBimCoefficient.name}</strong>
+                          <small>Коэффициенты: ПД — {number.format(selectedBimCoefficient.pd)}, РД — {number.format(selectedBimCoefficient.rd)}. Выбирать другой тип объекта не требуется.</small>
+                        </div>
+                      ) : (
+                        <label className="field">
+                          <span>Сопоставимый вид объекта для информационной модели</span>
+                          <select value={selectedBimIsCompatible ? selectedBimCoefficient?.id ?? "" : ""} onChange={(event) => onChange({ sbcBimObjectGroupId: Number(event.target.value) || undefined })}>
+                            <option value="">Выберите подходящую строку приложения № 2</option>
+                            {bimResolution.options.map((item) => <option key={item.id} value={item.id}>{item.id}. {item.name}</option>)}
+                          </select>
+                          <small className="field-hint">{bimResolution.note} {selectedBimCoefficient ? `ПД — ${number.format(selectedBimCoefficient.pd)}, РД — ${number.format(selectedBimCoefficient.rd)}.` : ""}</small>
+                        </label>
+                      )}
                       <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcBimRdFromNonBimPd)} onChange={(event) => onChange({ sbcBimRdFromNonBimPd: event.target.checked })} /><span>Считается только РД в форме информационной модели по ранее утверждённой обычной ПД</span></label>
-                    </>
-                  ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
                   {!conditioningIncluded ? (
-                    <NumericField label="Проектирование кондиционируемых помещений" value={project.sbcAirConditioningDesignCost ?? 0} step={10000} suffix="₽" hint="Если раздел КОН отсутствует в таблице распределения, укажите стоимость проектирования кондиционируемых помещений в базовом уровне цен. Для П + Р добавится 3,1% по п. 25." onChange={(value) => onChange({ sbcAirConditioningDesignCost: value })} />
-                  ) : null}
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} disabled={complexComponents.length > 0} onChange={(event) => onChange({ sbcComplexObject: event.target.checked, sbcComplexRole: event.target.checked ? "main" : "single", sbcComplexRoleCoefficient: 1 })} /><span>Эта позиция входит в комплекс, объединённый объект или повторную секцию</span></label>
-                  {project.sbcComplexObject ? (
-                    <>
-                      <label className="field">
-                        <span>Роль рассчитываемой позиции</span>
-                        <select value={complexRole} onChange={(event) => selectComplexRole(event.target.value as ProjectInput["sbcComplexRole"])}>
-                          <option value="main">Основное здание или отдельное здание комплекса · K 1</option>
-                          <option value="embedded">Встроенное помещение · K до 0,5</option>
-                          <option value="blocked">Сблокированное здание · K до 0,8</option>
-                          <option value="repeated">Повторная секция или корпус · K 0,2–0,8</option>
-                        </select>
-                        <small className="field-hint">Каждое здание комплекса рассчитывается отдельной позицией; итог комплекса получают суммированием позиций по пп. 18–20.</small>
-                      </label>
-                      {complexRole !== "main" ? <NumericField label="Коэффициент сокращённого объёма" value={project.sbcComplexRoleCoefficient ?? complexLimit.defaultValue} step={0.05} hint={`${complexLimit.source}. Максимум ${number.format(complexLimit.max)}; конкретное значение подтверждается составом и трудоёмкостью работ.`} onChange={(value) => onChange({ sbcComplexRoleCoefficient: value })} /> : null}
-                    </>
+                    <div className="fgis-condition-item fgis-conditioning-input">
+                      <div className="fgis-condition-title"><strong>КОН — кондиционирование воздуха</strong><span>Дополнение по п. 25, поскольку раздел отсутствует в выбранной строке распределения</span></div>
+                      {selectedPercentTable ? (
+                        <NumericField label="Стоимость строительства кондиционируемой части" value={project.sbcAirConditionedConstructionCost ?? 0} step={100000} suffix="₽" hint="Возьмите из сметного расчёта только стоимость помещений, для которых проектируется кондиционирование. Калькулятор сам определит базовую цену их проектирования по таблице 3.18." onChange={(value) => onChange({ sbcAirConditionedConstructionCost: value, sbcAirConditioningDesignCost: 0 })} />
+                      ) : (
+                        <NumericField label={(selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "").includes("кв. м") ? "Площадь кондиционируемых помещений" : `${indicatorExplanation.label} кондиционируемой части`} value={project.sbcAirConditionedIndicator ?? 0} step={1} suffix={selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."} hint={`Введите только объём кондиционируемой части в том же показателе, по которому считается объект. Калькулятор сам определит её базовую цену по таблице ${selectedTable?.code ?? "норматива"}.`} onChange={(value) => onChange({ sbcAirConditionedIndicator: value, sbcAirConditioningDesignCost: 0 })} />
+                      )}
+                      <div className="fgis-conditioning-result">
+                        <span>Расчёт дополнения КОН</span>
+                        <strong>{conditionedDesignBasePreview > 0 ? `${currency.format(conditionedDesignBasePreview)} × 3,1% = ${currency.format(conditionedDesignBasePreview * 0.031)}` : "Заполните показатель кондиционируемой части"}</strong>
+                        <small>КОН — кондиционирование воздуха. Дополнение применяется только потому, что в выбранной строке распределения этот раздел отсутствует.</small>
+                      </div>
+                    </div>
                   ) : null}
                 </>
               ) : (
-                <>
+                <div className="fgis-condition-item">
                   <NumericField label="Коэффициент условий Kусл" value={project.sbcComplexityCoefficient} step={0.05} hint="Введите только коэффициент с основанием в выбранном документе." onChange={(value) => onChange({ sbcComplexityCoefficient: value })} />
                   <NumericField label="Дополнительный коэффициент" value={project.sbcAdjustmentCoefficient} step={0.05} hint="Введите значение и проверьте основание по официальному PDF." onChange={(value) => onChange({ sbcAdjustmentCoefficient: value })} />
-                </>
+                </div>
               )}
-              {!breakdownDocument ? <NumericField label="Доля стадии ПД" value={project.sbcPdShare} step={0.01} suffix={`${number.format(project.sbcPdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к проектной документации." onChange={(value) => onChange({ sbcPdShare: value })} /> : null}
-              {!breakdownDocument ? <NumericField label="Доля стадии РД" value={project.sbcRdShare} step={0.01} suffix={`${number.format(project.sbcRdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к рабочей документации." onChange={(value) => onChange({ sbcRdShare: value })} /> : null}
-              <NumericField label="Базовый срок Tбаз" value={project.sbcBaseDurationDays} step={1} suffix="дн." hint="Исходная нормативная продолжительность до применения коэффициента срока." onChange={(value) => onChange({ sbcBaseDurationDays: value })} />
-              <NumericField label="Коэффициент срока Kсрок" value={project.sbcDurationCoefficient} step={0.05} hint="Множитель нормативной продолжительности. Итоговый срок = Tбаз × Kсрок." onChange={(value) => onChange({ sbcDurationCoefficient: value })} />
+              <div className="fgis-condition-item">
+                <div className="fgis-condition-title"><strong>Нормативный срок</strong><span>Не влияет на стоимость, показывает расчётную продолжительность</span></div>
+                <div className="fgis-condition-fields">
+                  {!breakdownDocument ? <NumericField label="Доля стадии ПД" value={project.sbcPdShare} step={0.01} suffix={`${number.format(project.sbcPdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к проектной документации." onChange={(value) => onChange({ sbcPdShare: value })} /> : null}
+                  {!breakdownDocument ? <NumericField label="Доля стадии РД" value={project.sbcRdShare} step={0.01} suffix={`${number.format(project.sbcRdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к рабочей документации." onChange={(value) => onChange({ sbcRdShare: value })} /> : null}
+                  <NumericField label="Базовый срок Tбаз" value={project.sbcBaseDurationDays} step={1} suffix="дн." hint="Исходная нормативная продолжительность." onChange={(value) => onChange({ sbcBaseDurationDays: value })} />
+                  <NumericField label="Коэффициент срока Kсрок" value={project.sbcDurationCoefficient} step={0.05} hint="Итоговый срок = Tбаз × Kсрок." onChange={(value) => onChange({ sbcDurationCoefficient: value })} />
+                </div>
+              </div>
             </div>
-            {supportsComplexBasket && project.sbcComplexObject ? (
+          </details>
+
+          {supportsComplexBasket ? (
+            <section className="fgis-structure-block">
+              <div className="fgis-structure-heading">
+                <div><span className="fgis-kicker">Состав расчёта</span><h3>Комплекс, объединённый объект или повторная секция</h3><p>Включайте только когда текущая позиция является частью составного объекта. Это меняет структуру расчёта, а не условия проектирования.</p></div>
+                <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} disabled={complexComponents.length > 0} onChange={(event) => onChange({ sbcComplexObject: event.target.checked, sbcComplexRole: event.target.checked ? "main" : "single", sbcComplexRoleCoefficient: 1 })} /><span>Считать в составе комплекса</span></label>
+              </div>
+              {project.sbcComplexObject ? (
+                <div className="fgis-structure-settings">
+                  <label className="field">
+                    <span>Роль рассчитываемой позиции</span>
+                    <select value={complexRole} onChange={(event) => selectComplexRole(event.target.value as ProjectInput["sbcComplexRole"])}>
+                      <option value="main">Основное здание или отдельное здание комплекса · K 1</option>
+                      <option value="embedded">Встроенное помещение · K до 0,5</option>
+                      <option value="blocked">Сблокированное здание · K до 0,8</option>
+                      <option value="repeated">Повторная секция или корпус · K 0,2–0,8</option>
+                    </select>
+                    <small className="field-hint">Каждое здание считается отдельной позицией; итог суммируется по пп. 18–20.</small>
+                  </label>
+                  {complexRole !== "main" ? <NumericField label="Коэффициент сокращённого объёма" value={project.sbcComplexRoleCoefficient ?? complexLimit.defaultValue} step={0.05} hint={`${complexLimit.source}. Максимум ${number.format(complexLimit.max)}.`} onChange={(value) => onChange({ sbcComplexRoleCoefficient: value })} /> : null}
+                </div>
+              ) : null}
+              {project.sbcComplexObject ? (
               <section className="fgis-complex-basket">
                 <div className="fgis-complex-heading">
                   <div>
@@ -935,8 +1043,9 @@ export function FgisPirCalculator({
                   </div>
                 ) : null}
               </section>
-            ) : null}
-          </details>
+              ) : null}
+            </section>
+          ) : null}
         </div>
 
         <aside className="fgis-passport">
@@ -1111,6 +1220,16 @@ export function FgisPirCalculator({
             <div><span>НДС · {number.format(project.vatRate * 100)}%</span><strong>{currency.format(result.currentPriceWithVat - result.currentPriceWithoutVat)}</strong></div>
           </div>
 
+          {result.normativeTrace.bimPdAdditionalWithoutVat + result.normativeTrace.bimRdAdditionalWithoutVat > 0 ? (
+            <div className="fgis-bim-impact">
+              <div>
+                <span>Влияние информационной модели</span>
+                <strong>+ {currency.format(result.normativeTrace.bimPdAdditionalWithoutVat + result.normativeTrace.bimRdAdditionalWithoutVat)}</strong>
+              </div>
+              <p>Справочно: ПД + {currency.format(result.normativeTrace.bimPdAdditionalWithoutVat)}, РД + {currency.format(result.normativeTrace.bimRdAdditionalWithoutVat)}. Сумма уже включена в итог и не является отдельным разделом проектной документации.</p>
+            </div>
+          ) : null}
+
           <div className="fgis-breakdown-scroll">
             <table className="fgis-breakdown-table">
               <thead>
@@ -1127,7 +1246,7 @@ export function FgisPirCalculator({
               <tbody>
                 {result.officialBreakdown.sections.map((section) => (
                   <tr key={section.code}>
-                    <th scope="row"><b>{section.code}</b><span>{section.name}</span></th>
+                    <th scope="row"><b>{section.code}</b><i aria-hidden="true">—</i><span>{section.name}</span></th>
                     <td>{section.pdSharePercent ? `${number.format(section.pdSharePercent)}%` : "—"}</td>
                     <td>{section.pdPriceWithoutVat ? currency.format(section.pdPriceWithoutVat) : "—"}</td>
                     <td>{section.rdSharePercent ? `${number.format(section.rdSharePercent)}%` : "—"}</td>
@@ -1137,7 +1256,7 @@ export function FgisPirCalculator({
                 ))}
                 {result.officialBreakdown.pdUnallocatedWithoutVat || result.officialBreakdown.rdUnallocatedWithoutVat ? (
                   <tr className="fgis-unallocated">
-                    <th scope="row"><b>Остаток</b><span>Не распределён опубликованной строкой ФГИС</span></th>
+                    <th scope="row"><b>Остаток</b><i aria-hidden="true">—</i><span>Не распределён опубликованной строкой ФГИС</span></th>
                     <td>{number.format(Math.max(0, 100 - result.officialBreakdown.pdPublishedTotalPercent))}%</td>
                     <td>{currency.format(result.officialBreakdown.pdUnallocatedWithoutVat)}</td>
                     <td>{number.format(Math.max(0, 100 - result.officialBreakdown.rdPublishedTotalPercent))}%</td>
