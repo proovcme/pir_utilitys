@@ -1086,10 +1086,10 @@ main {
 .fgis-breakdown-table thead th { color: #475467; background: #f6f8fb; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 .fgis-breakdown-table tbody th,
 .fgis-breakdown-table tfoot th { min-width: 270px; text-align: left; white-space: normal; }
-.fgis-breakdown-table tbody th b { display: inline-block; min-width: 40px; color: #8f2330; }
+.fgis-breakdown-table tbody th b { display: inline-block; min-width: 40px; color: #667085; }
 .fgis-breakdown-table tbody th span { color: #344054; font-weight: 650; }
 .fgis-breakdown-table tbody tr:hover td,
-.fgis-breakdown-table tbody tr:hover th { background: #fffafa; }
+.fgis-breakdown-table tbody tr:hover th { background: #f8fafc; }
 .fgis-breakdown-table tfoot th,
 .fgis-breakdown-table tfoot td { color: #172033; background: #f6f8fb; font-weight: 850; }
 .fgis-breakdown-table .fgis-unallocated th,
