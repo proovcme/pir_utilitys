@@ -78,6 +78,10 @@ export function PublicPirApp() {
     setProject((current) => ({ ...current, ...patch }));
   }, []);
   const result = useMemo(() => calculateSbcResult(project, emptyTotals), [project]);
+  const draftResult = useMemo(
+    () => calculateSbcResult({ ...project, sbcComplexComponents: undefined }, emptyTotals),
+    [project],
+  );
   const exportXlsx = useCallback(async () => {
     setExporting(true);
     try {
@@ -102,7 +106,7 @@ export function PublicPirApp() {
       </header>
 
       <main className="public-pir-main">
-        <FgisPirCalculator project={project} result={result} onChange={patchProject} onExport={exportXlsx} exporting={exporting} />
+        <FgisPirCalculator project={project} result={result} draftResult={draftResult} onChange={patchProject} onExport={exportXlsx} exporting={exporting} />
       </main>
 
       <footer className="public-pir-footer">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CheckCircle2, CircleAlert, Database, Download, ExternalLink, FileCheck2, ListTree } from "lucide-react";
+import { BookOpen, CheckCircle2, CircleAlert, Database, Download, ExternalLink, FileCheck2, ListTree, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   fgisPirSnapshot,
   findFgisTableRow,
@@ -32,6 +32,23 @@ const currency = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
 });
 const number = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+
+const complexRoleLabels: Record<NonNullable<ProjectInput["sbcComplexRole"]>, string> = {
+  single: "Отдельная позиция",
+  main: "Основное здание",
+  embedded: "Встроенное помещение",
+  blocked: "Сблокированное здание",
+  repeated: "Повторная секция",
+};
+
+const positionCountLabel = (count: number) => {
+  const modulo100 = count % 100;
+  const modulo10 = count % 10;
+  const noun = modulo100 >= 11 && modulo100 <= 14
+    ? "позиций"
+    : modulo10 === 1 ? "позиция" : modulo10 >= 2 && modulo10 <= 4 ? "позиции" : "позиций";
+  return `${count} ${noun}`;
+};
 
 const constrainedSiteFactors = [
   ["traffic", "Движение транспорта или пешеходов ближе 50 м"],
@@ -86,6 +103,7 @@ function NumericField({
 export function FgisPirCalculator({
   project,
   result,
+  draftResult,
   onChange,
   onCompare,
   onExport,
@@ -93,11 +111,13 @@ export function FgisPirCalculator({
 }: {
   project: ProjectInput;
   result: SbcResult;
+  draftResult?: SbcResult;
   onChange: (patch: Partial<ProjectInput>) => void;
   onCompare?: () => void;
   onExport?: () => void;
   exporting?: boolean;
 }) {
+  const [editingComponentId, setEditingComponentId] = useState<string | null>(null);
   const period = getFgisPeriod(project.sbcFgisPeriodId);
   const kind = project.sbcFgisKind;
   const documents = useMemo(() => getFgisDocuments(period, kind), [kind, period]);
@@ -167,6 +187,9 @@ export function FgisPirCalculator({
   const conditioningIncluded = Boolean(
     selectedBreakdownObject && (selectedBreakdownObject.stages.combined.КОН ?? 0) > 0,
   );
+  const complexComponents = project.sbcComplexComponents ?? [];
+  const currentDraftResult = draftResult ?? result;
+  const supportsComplexBasket = selectedDocument?.guid === "b90117ab-5223-4a7a-89ae-a8bcbb88f689";
 
   useEffect(() => {
     if (!categories.includes(category)) setCategory(selectedDocument?.category ?? categories[0] ?? "");
@@ -421,12 +444,52 @@ export function FgisPirCalculator({
     onChange({ sbcComplexRole: role, sbcComplexRoleCoefficient: limit.defaultValue });
   }
 
+  function saveCurrentComplexComponent() {
+    if (!currentDraftResult.normativeTrace.valid) return;
+    const existing = complexComponents.find((item) => item.id === editingComponentId);
+    const input: Partial<ProjectInput> = { ...project, sbcComplexObject: true };
+    delete input.sbcComplexComponents;
+    const id = existing?.id ?? `complex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const component = {
+      id,
+      name: `${project.sbcFgisTableCode ?? "Таблица"} · ${project.sbcFgisObjectName ?? "Позиция комплекса"}`,
+      pzuCoefficient: existing?.pzuCoefficient ?? 1,
+      input,
+    };
+    const next = existing
+      ? complexComponents.map((item) => item.id === existing.id ? component : item)
+      : [...complexComponents, component];
+    onChange({ sbcComplexComponents: next, sbcComplexObject: true });
+    setEditingComponentId(null);
+  }
+
+  function editComplexComponent(id: string) {
+    const component = complexComponents.find((item) => item.id === id);
+    if (!component) return;
+    onChange({ ...component.input, sbcComplexObject: true });
+    setEditingComponentId(id);
+  }
+
+  function removeComplexComponent(id: string) {
+    onChange({ sbcComplexComponents: complexComponents.filter((item) => item.id !== id) });
+    if (editingComponentId === id) setEditingComponentId(null);
+  }
+
+  function changeComponentPzuCoefficient(id: string, coefficient: number) {
+    onChange({
+      sbcComplexComponents: complexComponents.map((item) => item.id === id
+        ? { ...item, pzuCoefficient: Math.max(0, Math.min(1, coefficient)) }
+        : item),
+    });
+  }
+
   if (!selectedDocument) {
     return <div className="fgis-empty">В официальном снимке нет нормативов для выбранного периода.</div>;
   }
 
-  const normativeBaseFormula =
-    result.normativeTrace.formula || (project.sbcMethod === "natural"
+  const normativeBaseFormula = result.complexBreakdown
+    ? `Сумма базовых цен: ${positionCountLabel(result.complexBreakdown.componentCount)}`
+    : result.normativeTrace.formula || (project.sbcMethod === "natural"
       ? `${currency.format(project.sbcConstantA)} + ${currency.format(project.sbcConstantB)}/${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."} × ${number.format(project.sbcNaturalIndicator)} ${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."}`
       : `${currency.format(project.sbcConstructionCost)} × ${number.format(project.sbcDesignPercent * 100)}%`);
   const baseFormula = result.normativeTrace.airConditioningAdditionalBasePrice > 0
@@ -797,7 +860,7 @@ export function FgisPirCalculator({
                   {!conditioningIncluded ? (
                     <NumericField label="Проектирование кондиционируемых помещений" value={project.sbcAirConditioningDesignCost ?? 0} step={10000} suffix="₽" hint="Если раздел КОН отсутствует в таблице распределения, укажите стоимость проектирования кондиционируемых помещений в базовом уровне цен. Для П + Р добавится 3,1% по п. 25." onChange={(value) => onChange({ sbcAirConditioningDesignCost: value })} />
                   ) : null}
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} onChange={(event) => onChange({ sbcComplexObject: event.target.checked, sbcComplexRole: event.target.checked ? "main" : "single", sbcComplexRoleCoefficient: 1 })} /><span>Эта позиция входит в комплекс, объединённый объект или повторную секцию</span></label>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} disabled={complexComponents.length > 0} onChange={(event) => onChange({ sbcComplexObject: event.target.checked, sbcComplexRole: event.target.checked ? "main" : "single", sbcComplexRoleCoefficient: 1 })} /><span>Эта позиция входит в комплекс, объединённый объект или повторную секцию</span></label>
                   {project.sbcComplexObject ? (
                     <>
                       <label className="field">
@@ -825,12 +888,60 @@ export function FgisPirCalculator({
               <NumericField label="Базовый срок Tбаз" value={project.sbcBaseDurationDays} step={1} suffix="дн." hint="Исходная нормативная продолжительность до применения коэффициента срока." onChange={(value) => onChange({ sbcBaseDurationDays: value })} />
               <NumericField label="Коэффициент срока Kсрок" value={project.sbcDurationCoefficient} step={0.05} hint="Множитель нормативной продолжительности. Итоговый срок = Tбаз × Kсрок." onChange={(value) => onChange({ sbcDurationCoefficient: value })} />
             </div>
+            {supportsComplexBasket && project.sbcComplexObject ? (
+              <section className="fgis-complex-basket">
+                <div className="fgis-complex-heading">
+                  <div>
+                    <span className="fgis-kicker">Состав комплекса</span>
+                    <h4>{complexComponents.length ? positionCountLabel(complexComponents.length) : "Добавьте первое здание"}</h4>
+                    <p>Настройте объект выше и добавьте его в состав. Каждая позиция рассчитывается отдельно; итог суммируется автоматически. Для ПЗУ: 1 — учесть полностью, 0,5 — наполовину, 0 — исключить.</p>
+                  </div>
+                  <button type="button" className="primary fgis-complex-add" disabled={!currentDraftResult.normativeTrace.valid} onClick={saveCurrentComplexComponent}>
+                    <Plus size={16} /> {editingComponentId ? "Обновить позицию" : "Добавить текущую позицию"}
+                  </button>
+                </div>
+                {!currentDraftResult.normativeTrace.valid ? <p className="fgis-complex-draft-error">Сначала завершите расчёт текущей позиции: {currentDraftResult.normativeTrace.blockers[0]}</p> : (
+                  <div className="fgis-complex-draft">
+                    <span>Текущая позиция</span>
+                    <strong>{project.sbcFgisObjectName}</strong>
+                    <b>{currency.format(currentDraftResult.currentPriceWithoutVat)}</b>
+                  </div>
+                )}
+                {complexComponents.length ? (
+                  <div className="fgis-complex-scroll">
+                    <table className="fgis-complex-table">
+                      <thead><tr><th>Позиция</th><th>Роль и K</th><th>Коэф. ПЗУ</th><th>ПД</th><th>РД</th><th>Всего</th><th aria-label="Действия" /></tr></thead>
+                      <tbody>
+                        {result.complexBreakdown?.components.map((component) => (
+                          <tr key={component.id} className={editingComponentId === component.id ? "is-editing" : ""}>
+                            <th scope="row"><b>{component.name}</b><span>{number.format(component.indicator)} {component.indicatorUnit}</span>{!component.valid ? <em>{component.blockers[0]}</em> : null}</th>
+                            <td><b>{complexRoleLabels[component.role]}</b><span>K {number.format(component.roleCoefficient)}</span></td>
+                            <td>
+                              <label className="fgis-pzu-control">
+                                <span>K</span>
+                                <input aria-label={`Коэффициент ПЗУ для ${component.name}`} type="number" min="0" max="1" step="0.05" value={component.pzuCoefficient} onChange={(event) => changeComponentPzuCoefficient(component.id, Number(event.target.value))} />
+                              </label>
+                              {component.pzuReductionWithoutVat > 0 ? <small>−{currency.format(component.pzuReductionWithoutVat)}</small> : null}
+                            </td>
+                            <td>{currency.format(component.pdPriceWithoutVat)}</td>
+                            <td>{currency.format(component.rdPriceWithoutVat)}</td>
+                            <td><strong>{currency.format(component.currentPriceWithoutVat)}</strong></td>
+                            <td><div className="fgis-row-actions"><button type="button" title="Изменить позицию" onClick={() => editComplexComponent(component.id)}><Pencil size={15} /></button><button type="button" title="Удалить позицию" onClick={() => removeComplexComponent(component.id)}><Trash2 size={15} /></button></div></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr><th colSpan={3}>Итого по комплексу</th><td>{currency.format(result.pdPriceWithoutVat)}</td><td>{currency.format(result.rdPriceWithoutVat)}</td><td>{currency.format(result.currentPriceWithoutVat)}</td><td /></tr></tfoot>
+                    </table>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
           </details>
         </div>
 
         <aside className="fgis-passport">
           <div className="fgis-result">
-            <span>{isSurveyMethod ? "Нормативный расчёт" : "Текущая стоимость без НДС"}</span>
+            <span>{isSurveyMethod ? "Нормативный расчёт" : result.complexBreakdown ? "Итого по комплексу без НДС" : "Текущая стоимость без НДС"}</span>
             {isSurveyMethod ? (
               <>
                 <strong className="fgis-result-pending">Требуется состав работ</strong>
@@ -861,15 +972,15 @@ export function FgisPirCalculator({
                 </li>
                 <li>
                   <i>2</i>
-                  <div><strong>Нормативные условия</strong><code>{currency.format(result.basePrice)} × {number.format(result.normativeTrace.totalCoefficient)}</code><small>= {currency.format(result.adjustedBasePrice)}</small></div>
+                  <div><strong>{result.complexBreakdown ? "Условия каждой позиции" : "Нормативные условия"}</strong><code>{result.complexBreakdown ? "K роли, условий и ПЗУ применены внутри строк" : `${currency.format(result.basePrice)} × ${number.format(result.normativeTrace.totalCoefficient)}`}</code><small>= {currency.format(result.adjustedBasePrice)}</small></div>
                 </li>
                 <li>
                   <i>3</i>
-                  <div><strong>Переход в текущие цены</strong><code>{currency.format(result.adjustedBasePrice)} × {number.format(project.sbcIndexToCurrent)}</code><small>= {currency.format(result.currentPriceWithoutVat)} без НДС</small></div>
+                  <div><strong>{result.complexBreakdown ? "Суммирование комплекса" : "Переход в текущие цены"}</strong><code>{result.complexBreakdown ? `Сумма текущих цен: ${positionCountLabel(result.complexBreakdown.componentCount)}` : `${currency.format(result.adjustedBasePrice)} × ${number.format(project.sbcIndexToCurrent)}`}</code><small>= {currency.format(result.currentPriceWithoutVat)} без НДС</small></div>
                 </li>
                 <li>
                   <i>4</i>
-                  <div><strong>НДС</strong><code>{currency.format(result.currentPriceWithoutVat)} × {number.format(1 + project.vatRate)}</code><small>= {currency.format(result.currentPriceWithVat)} с НДС</small></div>
+                  <div><strong>НДС</strong><code>{result.complexBreakdown ? "Сумма стоимости позиций с НДС" : `${currency.format(result.currentPriceWithoutVat)} × ${number.format(1 + project.vatRate)}`}</code><small>= {currency.format(result.currentPriceWithVat)} с НДС</small></div>
                 </li>
               </ol>
             )}
@@ -893,22 +1004,24 @@ export function FgisPirCalculator({
                 </>
               ) : (
                 <>
-                  <p>{selectedPercentTable ? "Калькулятор определяет норматив проектирования по стоимости строительства и таблице 3.18." : "Калькулятор выбирает строку официальной таблицы по объекту и диапазону показателя. Денежные параметры a и b переводятся из тыс. ₽ в ₽."}</p>
+                  <p>{result.complexBreakdown
+                    ? "Комплекс рассчитывается как ведомость самостоятельных нормативных позиций: для каждого здания, сооружения или помещения определяется собственная цена, после чего позиции суммируются."
+                    : selectedPercentTable ? "Калькулятор определяет норматив проектирования по стоимости строительства и таблице 3.18." : "Калькулятор выбирает строку официальной таблицы по объекту и диапазону показателя. Денежные параметры a и b переводятся из тыс. ₽ в ₽."}</p>
                   <ol>
                     <li><b>Базовая цена:</b> применено правило {result.normativeTrace.ruleCode}: {result.normativeTrace.ruleTitle.toLocaleLowerCase("ru-RU")}.</li>
-                    <li><b>Условия:</b> применяются только выбранные условия с нормативным основанием. Общий множитель: {number.format(coefficientProduct)}.</li>
-                    <li><b>Текущий уровень цен:</b> Cтек = Cусл × I. Индекс I = {number.format(project.sbcIndexToCurrent)}.</li>
-                    <li><b>НДС:</b> Cндс = Cтек × (1 + {number.format(project.vatRate)}).</li>
+                    <li><b>Условия:</b> {result.complexBreakdown ? "роль, специальные условия, информационная модель и коэффициент ПЗУ применяются внутри соответствующей позиции" : `применяются только выбранные условия с нормативным основанием. Общий множитель: ${number.format(coefficientProduct)}`}.</li>
+                    <li><b>Текущий уровень цен:</b> {result.complexBreakdown ? "каждая позиция переводится в текущий уровень цен по своему сохранённому индексу; затем цены складываются" : `Cтек = Cусл × I. Индекс I = ${number.format(project.sbcIndexToCurrent)}`}.</li>
+                    <li><b>НДС:</b> {result.complexBreakdown ? "рассчитывается внутри каждой сохранённой позиции, после чего суммы с НДС складываются" : `Cндс = Cтек × (1 + ${number.format(project.vatRate)})`}.</li>
                     {project.sbcInformationModel ? (
                       <li><b>Информационная модель:</b> {project.sbcBimRdFromNonBimPd ? "РД принято в размере 60% от полной цены по п. 24" : "ПД принято 60%, РД — 40% по п. 23"}; коэффициенты П — {number.format(result.normativeTrace.bimPdCoefficient)}, Р — {number.format(result.normativeTrace.bimRdCoefficient)}.</li>
                     ) : (
                       <li><b>Стадии:</b> ПД {number.format(effectivePdShare * 100)}%, РД {number.format(effectiveRdShare * 100)}%, прочее {number.format(effectiveOtherShare * 100)}%.</li>
                     )}
                     {selectedNormCondition ? <li><b>Специальное условие:</b> {selectedNormCondition.label}, K = {number.format(selectedNormCondition.coefficient)} ({selectedNormCondition.source}).</li> : null}
-                    {project.sbcComplexObject ? <li><b>Позиция комплекса:</b> K = {number.format(result.normativeTrace.complexRoleCoefficient)}; здания комплекса считаются отдельно и затем суммируются.</li> : null}
+                    {result.complexBreakdown ? <li><b>Состав комплекса:</b> {positionCountLabel(result.complexBreakdown.componentCount)}. Коэффициент ПЗУ уменьшает только раздел ПЗУ выбранной строки, остальные разделы не меняются.</li> : project.sbcComplexObject ? <li><b>Позиция комплекса:</b> K = {number.format(result.normativeTrace.complexRoleCoefficient)}; здания комплекса считаются отдельно и затем суммируются.</li> : null}
                     {result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? <li><b>Кондиционирование:</b> дополнительно {currency.format(result.normativeTrace.airConditioningAdditionalBasePrice)} в базовом уровне цен по п. 25.</li> : null}
                     <li><b>Разделы:</b> стоимость стадии умножается на официальный процент соответствующего раздела.</li>
-                    <li><b>Срок:</b> T = {number.format(project.sbcBaseDurationDays)} × {number.format(project.sbcDurationCoefficient)} = {number.format(result.normativeDurationDays)} дн.</li>
+                    <li><b>Срок:</b> {result.complexBreakdown ? `для комплекса показана наибольшая продолжительность среди позиций — ${number.format(result.normativeDurationDays)} дн.` : `T = ${number.format(project.sbcBaseDurationDays)} × ${number.format(project.sbcDurationCoefficient)} = ${number.format(result.normativeDurationDays)} дн.`}</li>
                   </ol>
                   <p>Расчёт не зависит от зарплатных ставок, состава команды, трудозатрат и коммерческой маржи. Эти данные относятся к отдельной коммерческой калькуляции.</p>
                   <p><b>Нормативный источник:</b> {result.normativeTrace.source}{result.normativeTrace.sourcePage ? `, стр. ${result.normativeTrace.sourcePage}` : ""}.</p>
@@ -937,7 +1050,13 @@ export function FgisPirCalculator({
               <div><dt>Индекс</dt><dd>{selectedDocument.index ?? "не опубликован"}</dd></div>
               <div><dt>Утверждение</dt><dd>{selectedDocument.approvingAct ?? "не указано"}</dd></div>
               <div><dt>Норматив</dt><dd>{selectedDocument.name}</dd></div>
-              {appliedRow && selectedTable ? (
+              {result.complexBreakdown ? (
+                <>
+                  <div><dt>Состав</dt><dd>{positionCountLabel(result.complexBreakdown.componentCount)}</dd></div>
+                  <div><dt>Правило</dt><dd>Σ по пп. 18–20 НЗ № 848/пр</dd></div>
+                  <div><dt>Раздел ПЗУ</dt><dd>коэффициент задаётся отдельно для каждой позиции</dd></div>
+                </>
+              ) : appliedRow && selectedTable ? (
                 <>
                   <div><dt>Таблица</dt><dd>{selectedTable.code} · {selectedTable.title}</dd></div>
                   <div><dt>Объект</dt><dd>{appliedRow.objectName}</dd></div>

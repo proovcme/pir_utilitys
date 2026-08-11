@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { seedCatalog } from "../src/data/seedCatalog";
-import { calculateEstimate, getRateGroupCode, seedToCatalog } from "../src/domain/calculation";
+import { calculateEstimate, calculateSbcResult, getRateGroupCode, seedToCatalog } from "../src/domain/calculation";
+import type { EstimateTotals, ProjectInput } from "../src/domain/types";
+
+const emptyTotals: EstimateTotals = {
+  activeRows: 0,
+  directWorks: 0,
+  personDays: 0,
+  bufferAmount: 0,
+  totalWithBuffer: 0,
+  overheadAmount: 0,
+  commercialMarkup: 0,
+  totalWithoutVat: 0,
+  vatAmount: 0,
+  totalWithVat: 0,
+  costWithoutVatPerSquareMeter: 0,
+  costWithVatPerSquareMeter: 0,
+  warningCount: 0,
+};
 
 describe("calculateEstimate", () => {
   it("matches the source workbook totals with default computer depreciation", () => {
@@ -244,6 +261,74 @@ describe("calculateEstimate", () => {
     }, catalog).sbc;
     expect(invalidRepeat.normativeTrace.valid).toBe(false);
     expect(invalidRepeat.normativeTrace.blockers.join(" ")).toContain("от 0,2 до 0,8");
+  });
+
+  it("sums separate complex positions and applies the PZU coefficient only to PZU", () => {
+    const house = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcComplexObject: true,
+      sbcComplexRole: "main" as const,
+      sbcComplexRoleCoefficient: 1,
+    } satisfies ProjectInput;
+    const hotel = {
+      ...house,
+      sbcFgisTableCode: "3.3",
+      sbcFgisObjectName: "Здание гостиницы",
+      sbcFgisBreakdownTableCode: "3",
+      sbcFgisBreakdownObjectId: "3",
+      sbcNaturalIndicator: 2_000,
+      sbcComplexRole: "embedded" as const,
+      sbcComplexRoleCoefficient: 0.5,
+    } satisfies ProjectInput;
+    const houseResult = calculateSbcResult(house, emptyTotals);
+    const hotelResult = calculateSbcResult(hotel, emptyTotals);
+    const housePzu = houseResult.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat ?? 0;
+    const complex = calculateSbcResult({
+      ...house,
+      sbcComplexComponents: [
+        { id: "house", name: "Жилой дом", pzuCoefficient: 0.5, input: house },
+        { id: "hotel", name: "Встроенная гостиница", pzuCoefficient: 1, input: hotel },
+      ],
+    }, emptyTotals);
+
+    expect(complex.normativeTrace.valid).toBe(true);
+    expect(complex.normativeTrace.ruleCode).toBe("Σ 18–20");
+    expect(complex.complexBreakdown?.componentCount).toBe(2);
+    expect(complex.currentPriceWithoutVat).toBeCloseTo(houseResult.currentPriceWithoutVat - housePzu * 0.5 + hotelResult.currentPriceWithoutVat, 2);
+    expect(complex.complexBreakdown?.components[0].pzuReductionWithoutVat).toBeCloseTo(housePzu * 0.5, 2);
+    expect(complex.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat)
+      .toBeCloseTo(housePzu * 0.5 + (hotelResult.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat ?? 0), 2);
+  });
+
+  it("stops the whole complex when a saved PZU coefficient is outside 0 to 1", () => {
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcComplexObject: true,
+      sbcComplexRole: "main" as const,
+      sbcComplexRoleCoefficient: 1,
+    } satisfies ProjectInput;
+    const complex = calculateSbcResult({
+      ...project,
+      sbcComplexComponents: [{ id: "bad-pzu", name: "Позиция 1", pzuCoefficient: 1.2, input: project }],
+    }, emptyTotals);
+
+    expect(complex.normativeTrace.valid).toBe(false);
+    expect(complex.currentPriceWithoutVat).toBe(0);
+    expect(complex.normativeTrace.blockers.join(" ")).toContain("от 0 до 1");
   });
 
   it("contains the expanded RD engineering marks and maps them to rate groups", () => {

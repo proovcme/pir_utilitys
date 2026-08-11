@@ -27,6 +27,14 @@ import {
 } from "./fgisPir848Rules";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const positionCountLabel = (count: number) => {
+  const modulo100 = count % 100;
+  const modulo10 = count % 10;
+  const noun = modulo100 >= 11 && modulo100 <= 14
+    ? "позиций"
+    : modulo10 === 1 ? "позиция" : modulo10 >= 2 && modulo10 <= 4 ? "позиции" : "позиций";
+  return `${count} ${noun}`;
+};
 
 export const rateDisciplineDefinitions = [
   { code: "ЭОМ", title: "ЭОМ", description: "Вся электрика", codes: ["ЭОМ", "ЭО", "ЭМ", "ЭФ", "ЭН", "ЭС", "ЭГ", "ЗМ", "ЭЗС"] },
@@ -233,7 +241,7 @@ export function calculateFinanceSummary(
   };
 }
 
-export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals): SbcResult {
+function calculateSingleSbcResult(project: ProjectInput, totals: EstimateTotals): SbcResult {
   const method = project.sbcMethod ?? "natural";
   const naturalIndicator = project.sbcNaturalIndicator ?? project.area ?? 0;
   const breakdownDocument = getFgisBreakdownDocument(project.sbcFgisNormGuid);
@@ -508,6 +516,214 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
       warnings: traceWarnings,
     },
     officialBreakdown,
+  };
+}
+
+function applyPzuCoefficient(
+  result: SbcResult,
+  coefficient: number,
+  project: ProjectInput,
+  totals: EstimateTotals,
+): { result: SbcResult; reductionWithoutVat: number } {
+  if (coefficient < 0 || coefficient > 1) {
+    const blocker = "Коэффициент ПЗУ должен находиться в диапазоне от 0 до 1.";
+    return {
+      reductionWithoutVat: 0,
+      result: {
+        ...result,
+        basePrice: 0,
+        adjustedBasePrice: 0,
+        currentPriceWithoutVat: 0,
+        currentPriceWithVat: 0,
+        pdPriceWithoutVat: 0,
+        rdPriceWithoutVat: 0,
+        otherPriceWithoutVat: 0,
+        normativeTrace: {
+          ...result.normativeTrace,
+          valid: false,
+          blockers: [...result.normativeTrace.blockers, blocker],
+        },
+      },
+    };
+  }
+  if (!result.officialBreakdown || coefficient === 1) return { result, reductionWithoutVat: 0 };
+  const pzu = result.officialBreakdown.sections.find((section) => section.code === "ПЗУ");
+  if (!pzu) return { result, reductionWithoutVat: 0 };
+
+  const pdReduction = pzu.pdPriceWithoutVat * (1 - coefficient);
+  const rdReduction = pzu.rdPriceWithoutVat * (1 - coefficient);
+  const reductionWithoutVat = pdReduction + rdReduction;
+  const currentPriceWithoutVat = Math.max(0, result.currentPriceWithoutVat - reductionWithoutVat);
+  const currentIndex = project.sbcIndexToCurrent ?? 1;
+  const adjustedBasePrice = currentIndex > 0
+    ? Math.max(0, result.adjustedBasePrice - reductionWithoutVat / currentIndex)
+    : result.adjustedBasePrice;
+  const basePrice = result.normativeTrace.totalCoefficient > 0
+    ? adjustedBasePrice / result.normativeTrace.totalCoefficient
+    : result.basePrice;
+  const currentPriceWithVat = currentPriceWithoutVat * (1 + (project.vatRate ?? 0));
+  return {
+    reductionWithoutVat: roundMoney(reductionWithoutVat),
+    result: {
+      ...result,
+      basePrice: roundMoney(basePrice),
+      adjustedBasePrice: roundMoney(adjustedBasePrice),
+      currentPriceWithoutVat: roundMoney(currentPriceWithoutVat),
+      currentPriceWithVat: roundMoney(currentPriceWithVat),
+      pdPriceWithoutVat: roundMoney(Math.max(0, result.pdPriceWithoutVat - pdReduction)),
+      rdPriceWithoutVat: roundMoney(Math.max(0, result.rdPriceWithoutVat - rdReduction)),
+      differenceWithoutVat: roundMoney(totals.totalWithoutVat - currentPriceWithoutVat),
+      differenceWithVat: roundMoney(totals.totalWithVat - currentPriceWithVat),
+      officialBreakdown: {
+        ...result.officialBreakdown,
+        sections: result.officialBreakdown.sections.map((section) => section.code === "ПЗУ"
+          ? {
+              ...section,
+              pdSharePercent: section.pdSharePercent * coefficient,
+              rdSharePercent: section.rdSharePercent * coefficient,
+              combinedSharePercent: section.combinedSharePercent * coefficient,
+              pdPriceWithoutVat: roundMoney(section.pdPriceWithoutVat * coefficient),
+              rdPriceWithoutVat: roundMoney(section.rdPriceWithoutVat * coefficient),
+              totalPriceWithoutVat: roundMoney(section.totalPriceWithoutVat * coefficient),
+            }
+          : section),
+      },
+      notes: [
+        ...result.notes,
+        `К разделу ПЗУ применён согласованный коэффициент ${coefficient}; уменьшение ${roundMoney(reductionWithoutVat)} ₽ без НДС.`,
+      ],
+    },
+  };
+}
+
+export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals): SbcResult {
+  const components = project.sbcComplexComponents ?? [];
+  if (!components.length) return calculateSingleSbcResult(project, totals);
+
+  const calculated = components.map((component) => {
+    const componentProject: ProjectInput = {
+      ...project,
+      ...component.input,
+      sbcComplexComponents: undefined,
+      sbcComplexObject: true,
+    };
+    const single = calculateSingleSbcResult(componentProject, totals);
+    const adjusted = applyPzuCoefficient(single, component.pzuCoefficient, componentProject, totals);
+    return { component, project: componentProject, result: adjusted.result, pzuReductionWithoutVat: adjusted.reductionWithoutVat };
+  });
+  const allValid = calculated.every((item) => item.result.normativeTrace.valid);
+  const sum = (selector: (result: SbcResult) => number) => allValid
+    ? calculated.reduce((total, item) => total + selector(item.result), 0)
+    : 0;
+  const basePrice = sum((item) => item.basePrice);
+  const adjustedBasePrice = sum((item) => item.adjustedBasePrice);
+  const currentPriceWithoutVat = sum((item) => item.currentPriceWithoutVat);
+  const currentPriceWithVat = sum((item) => item.currentPriceWithVat);
+  const pdPriceWithoutVat = sum((item) => item.pdPriceWithoutVat);
+  const rdPriceWithoutVat = sum((item) => item.rdPriceWithoutVat);
+  const otherPriceWithoutVat = sum((item) => item.otherPriceWithoutVat);
+  const blockers = calculated.flatMap((item) => item.result.normativeTrace.blockers.map((blocker) => `${item.component.name}: ${blocker}`));
+  const warnings = calculated.flatMap((item) => item.result.normativeTrace.warnings.map((warning) => `${item.component.name}: ${warning}`));
+  const sectionTotals = fgisPirBreakdownCatalog.sections.map((section) => {
+    const pd = sum((item) => item.officialBreakdown?.sections.find((row) => row.code === section.code)?.pdPriceWithoutVat ?? 0);
+    const rd = sum((item) => item.officialBreakdown?.sections.find((row) => row.code === section.code)?.rdPriceWithoutVat ?? 0);
+    return { section, pd, rd, total: pd + rd };
+  });
+  const pdSharePercent = currentPriceWithoutVat > 0 ? pdPriceWithoutVat / currentPriceWithoutVat * 100 : 0;
+  const rdSharePercent = currentPriceWithoutVat > 0 ? rdPriceWithoutVat / currentPriceWithoutVat * 100 : 0;
+  const totalCoefficient = basePrice > 0 ? adjustedBasePrice / basePrice : 1;
+  const firstValidBreakdown = calculated.find((item) => item.result.normativeTrace.valid && item.result.officialBreakdown)?.result.officialBreakdown;
+
+  return {
+    method: "natural",
+    collectionName: "Комплекс объектов по НЗ № 848/пр",
+    baseYear: calculated[0]?.result.baseYear ?? project.sbcBaseYear ?? "",
+    basePrice: roundMoney(basePrice),
+    adjustedBasePrice: roundMoney(adjustedBasePrice),
+    currentPriceWithoutVat: roundMoney(currentPriceWithoutVat),
+    currentPriceWithVat: roundMoney(currentPriceWithVat),
+    pdPriceWithoutVat: roundMoney(pdPriceWithoutVat),
+    rdPriceWithoutVat: roundMoney(rdPriceWithoutVat),
+    otherPriceWithoutVat: roundMoney(otherPriceWithoutVat),
+    normativeDurationDays: allValid ? Math.max(...calculated.map((item) => item.result.normativeDurationDays), 0) : 0,
+    differenceWithoutVat: roundMoney(totals.totalWithoutVat - currentPriceWithoutVat),
+    differenceWithVat: roundMoney(totals.totalWithVat - currentPriceWithVat),
+    ratioToSbc: roundMoney(currentPriceWithoutVat > 0 ? totals.totalWithoutVat / currentPriceWithoutVat - 1 : 0),
+    notes: [
+      `Стоимость комплекса определена суммированием ${positionCountLabel(components.length)} по пп. 18–20 НЗ № 848/пр.`,
+      "Коэффициент ПЗУ применяется только к стоимости раздела ПЗУ соответствующей позиции.",
+      ...blockers.map((item) => `Расчёт остановлен: ${item}`),
+      ...warnings,
+    ],
+    normativeTrace: {
+      valid: allValid,
+      ruleCode: "Σ 18–20",
+      ruleTitle: "Суммирование отдельно рассчитанных зданий, сооружений и помещений комплекса",
+      formula: `Σ Cпозиций (${components.length})`,
+      source: "пп. 18–20 НЗ № 848/пр; пп. 152, 170 Методики № 707/пр",
+      sourcePage: 5,
+      constructionRebaseCoefficient: 1,
+      smrSharePercent: 60,
+      smrShareCoefficient: 1,
+      normSpecificCoefficient: 1,
+      normTableCoefficient: 1,
+      complexRoleCoefficient: 1,
+      specialStatusCoefficient: 1,
+      bimPdCoefficient: 1,
+      bimRdCoefficient: 1,
+      airConditioningAdditionalBasePrice: roundMoney(sum((item) => item.normativeTrace.airConditioningAdditionalBasePrice)),
+      totalCoefficient: roundMoney(totalCoefficient),
+      blockers,
+      warnings,
+    },
+    officialBreakdown: firstValidBreakdown
+      ? {
+          tableCode: "Σ",
+          objectId: "complex",
+          objectName: `Комплекс: ${positionCountLabel(components.length)}`,
+          page: 5,
+          stageSourcePage: firstValidBreakdown.stageSourcePage,
+          pdSharePercent: roundMoney(pdSharePercent),
+          rdSharePercent: roundMoney(rdSharePercent),
+          pdPublishedTotalPercent: 100,
+          rdPublishedTotalPercent: 100,
+          sections: sectionTotals.map(({ section, pd, rd, total }) => ({
+            code: section.code,
+            name: section.name,
+            pdSharePercent: pdPriceWithoutVat > 0 ? roundMoney(pd / pdPriceWithoutVat * 100) : 0,
+            rdSharePercent: rdPriceWithoutVat > 0 ? roundMoney(rd / rdPriceWithoutVat * 100) : 0,
+            combinedSharePercent: currentPriceWithoutVat > 0 ? roundMoney(total / currentPriceWithoutVat * 100) : 0,
+            pdPriceWithoutVat: roundMoney(pd),
+            rdPriceWithoutVat: roundMoney(rd),
+            totalPriceWithoutVat: roundMoney(total),
+          })),
+          pdUnallocatedWithoutVat: sum((item) => item.officialBreakdown?.pdUnallocatedWithoutVat ?? 0),
+          rdUnallocatedWithoutVat: sum((item) => item.officialBreakdown?.rdUnallocatedWithoutVat ?? 0),
+        }
+      : undefined,
+    complexBreakdown: {
+      componentCount: components.length,
+      components: calculated.map(({ component, project: componentProject, result, pzuReductionWithoutVat }) => ({
+        id: component.id,
+        name: component.name,
+        tableCode: componentProject.sbcFgisTableCode ?? "",
+        objectName: componentProject.sbcFgisObjectName ?? "",
+        indicator: componentProject.sbcMethod === "constructionPercent"
+          ? componentProject.sbcConstructionCost ?? 0
+          : componentProject.sbcNaturalIndicator ?? 0,
+        indicatorUnit: componentProject.sbcFgisIndicatorUnit ?? (componentProject.sbcMethod === "constructionPercent" ? "₽" : "ед."),
+        role: componentProject.sbcComplexRole ?? "main",
+        roleCoefficient: result.normativeTrace.complexRoleCoefficient,
+        pzuCoefficient: component.pzuCoefficient,
+        pzuReductionWithoutVat,
+        basePrice: result.basePrice,
+        currentPriceWithoutVat: result.currentPriceWithoutVat,
+        pdPriceWithoutVat: result.pdPriceWithoutVat,
+        rdPriceWithoutVat: result.rdPriceWithoutVat,
+        valid: result.normativeTrace.valid,
+        blockers: result.normativeTrace.blockers,
+      })),
+    },
   };
 }
 

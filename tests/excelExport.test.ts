@@ -128,5 +128,48 @@ describe("exportEstimateWorkbook", () => {
     const bimLabels = bimCalculation.getColumn("A").values.map(String);
     expect(bimLabels).toContain("Коэффициент BIM для П");
     expect(bimLabels).toContain("Коэффициент BIM для Р");
+
+    const complexProject = {
+      ...project,
+      sbcComplexObject: true,
+      sbcComplexRole: "main" as const,
+      sbcComplexRoleCoefficient: 1,
+      sbcComplexComponents: [
+        {
+          id: "main",
+          name: "Основной жилой дом",
+          pzuCoefficient: 1,
+          input: { ...project, sbcComplexObject: true, sbcComplexRole: "main" as const, sbcComplexRoleCoefficient: 1 },
+        },
+        {
+          id: "repeat",
+          name: "Повторный жилой дом",
+          pzuCoefficient: 0.5,
+          input: { ...project, sbcComplexObject: true, sbcComplexRole: "repeated" as const, sbcComplexRoleCoefficient: 0.5 },
+        },
+      ],
+    };
+    const complexResult = calculateEstimate(complexProject, catalog).sbc;
+    const complexBytes = await buildPublicPirWorkbook(complexProject, complexResult);
+    const complexWorkbook = new ExcelJS.Workbook();
+    await complexWorkbook.xlsx.load(Buffer.from(complexBytes));
+    const complexCalculation = complexWorkbook.getWorksheet("Расчёт")!;
+    const complexComposition = complexWorkbook.getWorksheet("Состав комплекса")!;
+    expect(complexCalculation.getCell("A1").value).toBe("Нормативный расчёт стоимости комплекса объектов");
+    expect(complexCalculation.getCell("B19").value).toMatchObject({ formula: expect.stringContaining("ROUND(") });
+    expect(complexComposition.getCell("A1").value).toBe("Ведомость нормативных позиций комплекса");
+    expect(complexComposition.getCell("B7").value).toBe("ИТОГО ПО КОМПЛЕКСУ");
+    expect(complexComposition.getCell("N7").value).toMatchObject({ formula: "SUM(N5:N6)" });
+    expect(complexComposition.getCell("I6").value).toBe(0.5);
+
+    const complexSnapshot: CalculationSnapshot = {
+      ...snapshot,
+      project: complexProject,
+      result: calculateEstimate(complexProject, catalog),
+    };
+    const fullComplexBytes = await exportEstimateWorkbook(complexSnapshot, { fileName: "complex.xlsx", includeAuditSheets: true });
+    const fullComplexWorkbook = new ExcelJS.Workbook();
+    await fullComplexWorkbook.xlsx.load(Buffer.from(fullComplexBytes));
+    expect(fullComplexWorkbook.getWorksheet("Комплекс ФГИС")?.getCell("B7").value).toBe("ИТОГО ПО КОМПЛЕКСУ");
   });
 });

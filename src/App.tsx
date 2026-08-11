@@ -21,6 +21,7 @@ import { seedCatalog } from "./data/seedCatalog";
 import {
   calculateEstimate,
   calculateMonthlyDepreciation,
+  calculateSbcResult,
   getLineStaffing,
   getRateGroupCode,
   getStaffRoleMultiplier,
@@ -374,6 +375,10 @@ export function App() {
   const [newCalculationArea, setNewCalculationArea] = useState("");
 
   const result = useMemo(() => calculateEstimate(project, catalog), [project, catalog]);
+  const draftSbcResult = useMemo(
+    () => calculateSbcResult({ ...project, sbcComplexComponents: undefined }, result.totals),
+    [project, result.totals],
+  );
   const monthlyDepreciation = useMemo(() => calculateMonthlyDepreciation(project), [project]);
   const costGroups = useMemo(() => {
     const values = catalog.lines.map(resolveCostGroup);
@@ -1923,6 +1928,7 @@ export function App() {
           <FgisPirCalculator
             project={project}
             result={result.sbc}
+            draftResult={draftSbcResult}
             onChange={patchProject}
             onCompare={() => {
               compareWithSbc();

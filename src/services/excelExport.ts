@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
-import type { CalculationSnapshot, ExportOptions } from "../domain/types";
+import type { CalculationSnapshot, ExportOptions, SbcComplexRole } from "../domain/types";
 import {
   getLineStaffing,
   getRateGroupCode,
@@ -18,6 +18,13 @@ const isTauriRuntime = () => "__TAURI_INTERNALS__" in window;
 
 const quoteSheet = (name: string) => `'${name.replace(/'/g, "''")}'`;
 const formula = (formulaText: string, result?: number | string) => ({ formula: formulaText, result });
+const complexRoleLabel = (role: SbcComplexRole) => ({
+  single: "Отдельный объект",
+  main: "Основная позиция",
+  embedded: "Встроенная часть",
+  blocked: "Сблокированное здание",
+  repeated: "Повторная позиция",
+})[role];
 
 const toArrayBuffer = (bytes: Uint8Array) =>
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -93,6 +100,9 @@ export async function exportEstimateWorkbook(
   const sbcBreakdown = workbook.addWorksheet("Разделы ФГИС", {
     views: [{ showGridLines: false, state: "frozen", ySplit: 4 }],
   });
+  const sbcComplex = snapshot.result.sbc.complexBreakdown
+    ? workbook.addWorksheet("Комплекс ФГИС", { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] })
+    : undefined;
 
   summary.getCell("A1").value = "Итоговая сводка";
   styleTitle(summary.getCell("A1"));
@@ -521,19 +531,26 @@ export async function exportEstimateWorkbook(
     snapshot.project.sbcFgisObjectName ?? "",
   );
   const structuredSbc = Boolean(snapshot.result.sbc.officialBreakdown);
-  const sbcBaseFormula = snapshot.result.sbc.normativeTrace.ruleCode === "8.1"
+  const isComplexSbc = Boolean(snapshot.result.sbc.complexBreakdown);
+  const sbcBaseFormula = isComplexSbc
+    ? `ROUND(${snapshot.result.sbc.basePrice},2)`
+    : snapshot.result.sbc.normativeTrace.ruleCode === "8.1"
     ? "B11+B12*B13"
     : `ROUND(${snapshot.result.sbc.basePrice},2)`;
-  const sbcFirstConditionCoefficient = structuredSbc
+  const sbcFirstConditionCoefficient = isComplexSbc
+    ? snapshot.result.sbc.normativeTrace.totalCoefficient
+    : structuredSbc
     ? snapshot.result.sbc.normativeTrace.normSpecificCoefficient
     : snapshot.project.sbcComplexityCoefficient;
-  const sbcSecondConditionCoefficient = structuredSbc
+  const sbcSecondConditionCoefficient = isComplexSbc
+    ? 1
+    : structuredSbc
     ? snapshot.result.sbc.normativeTrace.specialStatusCoefficient * snapshot.result.sbc.normativeTrace.smrShareCoefficient
     : snapshot.project.sbcAdjustmentCoefficient;
   const sbcRows: Array<[string, ExcelJS.CellValue, string]> = [
     ["Вид работ", snapshot.project.sbcFgisKind === "survey" ? "Инженерные изыскания" : "Проектные работы", "Определяет применимую группу нормативов и метод расчёта."],
     ["Период индекса", snapshot.project.sbcFgisPeriodLabel, "Квартал, к которому приводится базовая цена."],
-    ["Норматив", snapshot.project.sbcCollectionName, "Официальный документ ФГИС ЦС, по которому выбран объект и таблица."],
+    ["Норматив", isComplexSbc ? snapshot.result.sbc.collectionName : snapshot.project.sbcCollectionName, "Официальный документ ФГИС ЦС, по которому выбран объект и таблица."],
     ["Утверждение", snapshot.project.sbcFgisApprovingAct, "Приказ или иной акт, которым утверждён норматив."],
     ["Уровень цен", snapshot.project.sbcBaseYear, "Дата базового уровня цен параметров a и b."],
     ["Индекс ФГИС", snapshot.project.sbcIndexToCurrent, "Множитель перевода базовой цены в выбранный текущий квартал."],
@@ -553,14 +570,14 @@ export async function exportEstimateWorkbook(
       ),
       "Шаг 1: Cбаз = a + b × X либо Cстр × p.",
     ],
-    ["С коэффициентами", formula("B18*B16*B17", snapshot.result.sbc.adjustedBasePrice), "Шаг 2: Cусл = Cбаз × Kусл × Kдоп."],
-    ["Текущая стоимость без НДС", formula("B19*B9", snapshot.result.sbc.currentPriceWithoutVat), "Шаг 3: Cтек = Cусл × индекс ФГИС."],
+    ["С коэффициентами", formula(isComplexSbc ? `ROUND(${snapshot.result.sbc.adjustedBasePrice},2)` : "B18*B16*B17", snapshot.result.sbc.adjustedBasePrice), "Шаг 2: Cусл = Cбаз × Kусл × Kдоп."],
+    ["Текущая стоимость без НДС", formula(isComplexSbc ? `ROUND(${snapshot.result.sbc.currentPriceWithoutVat},2)` : "B19*B9", snapshot.result.sbc.currentPriceWithoutVat), "Шаг 3: Cтек = Cусл × индекс ФГИС."],
     ["НДС", snapshot.project.vatRate, "Ставка НДС: 0,22 = 22%."],
-    ["Текущая стоимость с НДС", formula("B20*(1+B21)", snapshot.result.sbc.currentPriceWithVat), "Шаг 4: Cндс = Cтек × (1 + ставка НДС)."],
-    ["Доля ПД", snapshot.project.sbcPdShare, "Часть текущей цены, относимая к проектной документации."],
-    ["Доля РД", snapshot.project.sbcRdShare, "Часть текущей цены, относимая к рабочей документации."],
-    ["ПД без НДС", formula("B20*B23/MAX(1,B23+B24)", snapshot.result.sbc.pdPriceWithoutVat), "Текущая цена без НДС × эффективная доля ПД. При сумме долей выше 100% они нормализуются пропорционально."],
-    ["РД без НДС", formula("B20*B24/MAX(1,B23+B24)", snapshot.result.sbc.rdPriceWithoutVat), "Текущая цена без НДС × эффективная доля РД. При сумме долей выше 100% они нормализуются пропорционально."],
+    ["Текущая стоимость с НДС", formula(isComplexSbc ? `ROUND(${snapshot.result.sbc.currentPriceWithVat},2)` : "B20*(1+B21)", snapshot.result.sbc.currentPriceWithVat), "Шаг 4: Cндс = Cтек × (1 + ставка НДС)."],
+    ["Доля ПД", snapshot.result.sbc.officialBreakdown ? snapshot.result.sbc.officialBreakdown.pdSharePercent / 100 : snapshot.project.sbcPdShare, "Часть текущей цены, относимая к проектной документации."],
+    ["Доля РД", snapshot.result.sbc.officialBreakdown ? snapshot.result.sbc.officialBreakdown.rdSharePercent / 100 : snapshot.project.sbcRdShare, "Часть текущей цены, относимая к рабочей документации."],
+    ["ПД без НДС", formula(isComplexSbc ? `ROUND(${snapshot.result.sbc.pdPriceWithoutVat},2)` : "B20*B23/MAX(1,B23+B24)", snapshot.result.sbc.pdPriceWithoutVat), "Текущая цена без НДС × эффективная доля ПД. При сумме долей выше 100% они нормализуются пропорционально."],
+    ["РД без НДС", formula(isComplexSbc ? `ROUND(${snapshot.result.sbc.rdPriceWithoutVat},2)` : "B20*B24/MAX(1,B23+B24)", snapshot.result.sbc.rdPriceWithoutVat), "Текущая цена без НДС × эффективная доля РД. При сумме долей выше 100% они нормализуются пропорционально."],
     ["Источник", snapshot.project.sbcFgisSourceUrl, "Прямая ссылка на официальный документ ФГИС ЦС."],
     ["SHA-256 снимка каталога", snapshot.project.sbcFgisCatalogSha256, "Контрольная сумма версии локального каталога для воспроизводимости."],
     ["Таблица ФГИС", snapshot.project.sbcFgisTableCode ?? "", "Код таблицы, из которой выбрана нормативная строка."],
@@ -596,6 +613,43 @@ export async function exportEstimateWorkbook(
     text: snapshot.project.sbcFgisSourceUrl,
     hyperlink: snapshot.project.sbcFgisSourceUrl,
   };
+
+  if (sbcComplex && snapshot.result.sbc.complexBreakdown) {
+    const complexBreakdown = snapshot.result.sbc.complexBreakdown;
+    sbcComplex.getCell("A1").value = "Ведомость нормативных позиций комплекса";
+    styleTitle(sbcComplex.getCell("A1"));
+    sbcComplex.mergeCells("A1:O1");
+    sbcComplex.getCell("A2").value = "Каждая позиция рассчитана отдельно; итог определён суммированием по пп. 18–20 НЗ № 848/пр.";
+    sbcComplex.mergeCells("A2:O2");
+    sbcComplex.getCell("A3").value = "Коэффициент ПЗУ применяется только к разделу ПЗУ соответствующей позиции. Суммы без НДС.";
+    sbcComplex.mergeCells("A3:O3");
+    sbcComplex.getRow(4).values = ["№", "Позиция", "Таблица", "Объект", "Показатель", "Ед.", "Роль", "K роли", "K ПЗУ", "Уменьшение ПЗУ", "Базовая цена", "ПД", "РД", "Всего", "Контроль"];
+    styleHeader(sbcComplex.getRow(4));
+    complexBreakdown.components.forEach((component, index) => {
+      const row = index + 5;
+      sbcComplex.getRow(row).values = [
+        index + 1, component.name, component.tableCode, component.objectName, component.indicator, component.indicatorUnit,
+        complexRoleLabel(component.role), component.roleCoefficient, component.pzuCoefficient, component.pzuReductionWithoutVat,
+        component.basePrice, component.pdPriceWithoutVat, component.rdPriceWithoutVat, component.currentPriceWithoutVat,
+        component.valid ? "Рассчитано" : component.blockers.join("; "),
+      ];
+      ["J", "K", "L", "M", "N"].forEach((column) => { sbcComplex.getCell(`${column}${row}`).numFmt = rub; });
+    });
+    const totalRow = complexBreakdown.components.length + 5;
+    const lastRow = totalRow - 1;
+    sbcComplex.getRow(totalRow).values = [
+      "", "ИТОГО ПО КОМПЛЕКСУ", "", "", "", "", "", "", "",
+      formula(`SUM(J5:J${lastRow})`, complexBreakdown.components.reduce((sum, item) => sum + item.pzuReductionWithoutVat, 0)),
+      formula(`SUM(K5:K${lastRow})`, snapshot.result.sbc.basePrice),
+      formula(`SUM(L5:L${lastRow})`, snapshot.result.sbc.pdPriceWithoutVat),
+      formula(`SUM(M5:M${lastRow})`, snapshot.result.sbc.rdPriceWithoutVat),
+      formula(`SUM(N5:N${lastRow})`, snapshot.result.sbc.currentPriceWithoutVat),
+      snapshot.result.sbc.normativeTrace.valid ? "Расчёт допустим" : "Расчёт остановлен",
+    ];
+    sbcComplex.getRow(totalRow).font = { bold: true };
+    ["J", "K", "L", "M", "N"].forEach((column) => { sbcComplex.getCell(`${column}${totalRow}`).numFmt = rub; });
+    setColumns(sbcComplex, [7, 34, 12, 42, 14, 10, 18, 10, 10, 20, 20, 20, 20, 22, 38]);
+  }
 
   const officialBreakdown = snapshot.result.sbc.officialBreakdown;
   sbcBreakdown.getCell("A1").value = "Нормативная стоимость ПД и РД по разделам";

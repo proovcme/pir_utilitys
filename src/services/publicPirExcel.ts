@@ -1,10 +1,17 @@
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import type { ProjectInput, SbcResult } from "../domain/types";
+import type { ProjectInput, SbcComplexRole, SbcResult } from "../domain/types";
 
 const rub = '#,##0" ₽"';
 const percent = "0.0%";
 const formula = (formulaText: string, result: number) => ({ formula: formulaText, result });
+const complexRoleLabel = (role: SbcComplexRole) => ({
+  single: "Отдельный объект",
+  main: "Основная позиция",
+  embedded: "Встроенная часть",
+  blocked: "Сблокированное здание",
+  repeated: "Повторная позиция",
+})[role];
 
 function header(row: ExcelJS.Row) {
   row.eachCell((cell) => {
@@ -24,8 +31,11 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
 
+  const isComplex = Boolean(result.complexBreakdown);
   const calculation = workbook.addWorksheet("Расчёт", { views: [{ showGridLines: false }] });
-  calculation.getCell("A1").value = "Нормативный расчёт стоимости проектных работ";
+  calculation.getCell("A1").value = isComplex
+    ? "Нормативный расчёт стоимости комплекса объектов"
+    : "Нормативный расчёт стоимости проектных работ";
   calculation.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF172033" } };
   calculation.mergeCells("A1:C1");
   calculation.getCell("A2").value = "По данным ФГИС ЦС. Это не локальная или объектная смета строительства и не калькуляция команды по зарплатным ставкам.";
@@ -34,13 +44,19 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   header(calculation.getRow(4));
 
   const structured = Boolean(result.officialBreakdown);
-  const basePriceFormula = result.normativeTrace.ruleCode === "8.1"
+  const basePriceFormula = isComplex
+    ? `ROUND(${result.basePrice},2)`
+    : result.normativeTrace.ruleCode === "8.1"
     ? `B9+B10*B11+${result.normativeTrace.airConditioningAdditionalBasePrice}`
     : `ROUND(${result.basePrice},2)`;
-  const firstConditionCoefficient = structured
+  const firstConditionCoefficient = isComplex
+    ? result.normativeTrace.totalCoefficient
+    : structured
     ? result.normativeTrace.normSpecificCoefficient
     : project.sbcComplexityCoefficient;
-  const secondConditionCoefficient = structured
+  const secondConditionCoefficient = isComplex
+    ? 1
+    : structured
     ? result.normativeTrace.normTableCoefficient
       * result.normativeTrace.complexRoleCoefficient
       * result.normativeTrace.specialStatusCoefficient
@@ -49,20 +65,26 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   const isBim = Boolean(project.sbcInformationModel);
   const pdShare = result.officialBreakdown ? result.officialBreakdown.pdSharePercent / 100 : project.sbcPdShare;
   const rdShare = result.officialBreakdown ? result.officialBreakdown.rdSharePercent / 100 : project.sbcRdShare;
-  const adjustedFormula = isBim
+  const adjustedFormula = isComplex
+    ? `ROUND(${result.adjustedBasePrice},2)`
+    : isBim
     ? `B14*B15*B16*(B20*${result.normativeTrace.bimPdCoefficient}+B22*${result.normativeTrace.bimRdCoefficient})`
     : "B14*B15*B16";
-  const pdFormula = isBim
+  const pdFormula = isComplex
+    ? `ROUND(${result.pdPriceWithoutVat},2)`
+    : isBim
     ? `B14*B15*B16*B20*${result.normativeTrace.bimPdCoefficient}*B18`
     : "B19*B20";
-  const rdFormula = isBim
+  const rdFormula = isComplex
+    ? `ROUND(${result.rdPriceWithoutVat},2)`
+    : isBim
     ? `B14*B15*B16*B22*${result.normativeTrace.bimRdCoefficient}*B18`
     : "B19*B22";
   const rows: Array<[string, ExcelJS.CellValue, string]> = [
-    ["Норматив", project.sbcCollectionName, "Официальный документ, по которому выполнен расчёт."],
+    ["Норматив", isComplex ? result.collectionName : project.sbcCollectionName, "Официальный документ, по которому выполнен расчёт."],
     ["Период", project.sbcFgisPeriodLabel, "Текущий квартал для пересчёта цены."],
-    ["Таблица", project.sbcFgisTableCode ?? "", "Таблица выбранного объекта или таблица 3.18."],
-    ["Объект", project.sbcFgisObjectName ?? "", "Тип проектируемого объекта."],
+    ["Таблица", isComplex ? "Σ" : project.sbcFgisTableCode ?? "", isComplex ? "Каждая позиция комплекса содержит собственную нормативную таблицу." : "Таблица выбранного объекта или таблица 3.18."],
+    ["Объект", isComplex ? `Комплекс, количество позиций: ${result.complexBreakdown?.componentCount ?? 0}` : project.sbcFgisObjectName ?? "", "Тип проектируемого объекта."],
     ["Постоянная a", project.sbcConstantA, "Фиксированная часть базовой цены, ₽."],
     ["Показатель b", project.sbcConstantB, `Цена единицы показателя, ₽/${project.sbcFgisIndicatorUnit || "ед."}.`],
     ["Натуральный показатель", project.sbcNaturalIndicator, `Введённое значение, ${project.sbcFgisIndicatorUnit || "ед."}.`],
@@ -73,13 +95,13 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Остальные нормативные коэффициенты", secondConditionCoefficient, "Условие специальной таблицы, роль позиции, специальный статус и коэффициент доли СМР."],
     ["Цена с коэффициентами", formula(adjustedFormula, result.adjustedBasePrice), isBim ? "Базовая цена × общие условия × доли стадий × отдельные коэффициенты информационной модели." : "Базовая цена × коэффициенты."],
     ["Индекс текущего периода", project.sbcIndexToCurrent, "Перевод базовой цены в выбранный квартал."],
-    ["Текущая стоимость без НДС", formula("B17*B18", result.currentPriceWithoutVat), "Нормативная стоимость ПД + РД."],
+    ["Текущая стоимость без НДС", formula(isComplex ? `ROUND(${result.currentPriceWithoutVat},2)` : "B17*B18", result.currentPriceWithoutVat), "Нормативная стоимость ПД + РД."],
     ["Доля ПД", pdShare, isBim ? "Для документации с информационной моделью — 60% по п. 23 НЗ № 848/пр." : "Доля проектной документации."],
     ["ПД без НДС", formula(pdFormula, result.pdPriceWithoutVat), "Стоимость проектной документации."],
     ["Доля РД", rdShare, isBim ? "Для документации с информационной моделью — 40%; для РД по обычной ПД — 60% по п. 24." : "Доля рабочей документации."],
     ["РД без НДС", formula(rdFormula, result.rdPriceWithoutVat), "Стоимость рабочей документации."],
     ["НДС", project.vatRate, "Действующая ставка в расчёте."],
-    ["Итого с НДС", formula("B19*(1+B24)", result.currentPriceWithVat), "Стоимость проектных работ с НДС."],
+    ["Итого с НДС", formula(isComplex ? `ROUND(${result.currentPriceWithVat},2)` : "B19*(1+B24)", result.currentPriceWithVat), "Стоимость проектных работ с НДС."],
     ["Источник", project.sbcFgisSourceUrl, "Прямая ссылка на официальный документ ФГИС ЦС."],
     ["Контакты", "OVC.me", "Вопросы по применению калькулятора."],
     ["Расчёт допустим", result.normativeTrace.valid ? "Да" : "Нет", "При наличии блокирующего условия итоговая цена не выдаётся."],
@@ -106,6 +128,63 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   [9, 10, 12, 14, 17, 19, 21, 23, 25].forEach((row) => { calculation.getCell(`B${row}`).numFmt = rub; });
   [13, 20, 22, 24, 34].forEach((row) => { calculation.getCell(`B${row}`).numFmt = percent; });
   calculation.getCell("B26").value = { text: project.sbcFgisSourceUrl, hyperlink: project.sbcFgisSourceUrl };
+
+  if (result.complexBreakdown) {
+    const complex = workbook.addWorksheet("Состав комплекса", { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] });
+    complex.getCell("A1").value = "Ведомость нормативных позиций комплекса";
+    complex.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF172033" } };
+    complex.mergeCells("A1:O1");
+    complex.getCell("A2").value = "Каждая позиция рассчитана отдельно; итог определён суммированием по пп. 18–20 НЗ № 848/пр.";
+    complex.mergeCells("A2:O2");
+    complex.getCell("A3").value = "Коэффициент ПЗУ применяется только к стоимости раздела ПЗУ соответствующей позиции. Суммы без НДС.";
+    complex.mergeCells("A3:O3");
+    complex.getRow(4).values = ["№", "Позиция", "Таблица", "Объект", "Показатель", "Ед.", "Роль", "K роли", "K ПЗУ", "Уменьшение ПЗУ", "Базовая цена", "ПД", "РД", "Всего", "Контроль"];
+    header(complex.getRow(4));
+    result.complexBreakdown.components.forEach((component, index) => {
+      const row = index + 5;
+      complex.getRow(row).values = [
+        index + 1,
+        component.name,
+        component.tableCode,
+        component.objectName,
+        component.indicator,
+        component.indicatorUnit,
+        complexRoleLabel(component.role),
+        component.roleCoefficient,
+        component.pzuCoefficient,
+        component.pzuReductionWithoutVat,
+        component.basePrice,
+        component.pdPriceWithoutVat,
+        component.rdPriceWithoutVat,
+        component.currentPriceWithoutVat,
+        component.valid ? "Рассчитано" : component.blockers.join("; "),
+      ];
+      ["J", "K", "L", "M", "N"].forEach((column) => { complex.getCell(`${column}${row}`).numFmt = rub; });
+    });
+    const totalRow = result.complexBreakdown.components.length + 5;
+    const firstRow = 5;
+    const lastRow = totalRow - 1;
+    complex.getRow(totalRow).values = [
+      "",
+      "ИТОГО ПО КОМПЛЕКСУ",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      formula(`SUM(J${firstRow}:J${lastRow})`, result.complexBreakdown.components.reduce((sum, item) => sum + item.pzuReductionWithoutVat, 0)),
+      formula(`SUM(K${firstRow}:K${lastRow})`, result.basePrice),
+      formula(`SUM(L${firstRow}:L${lastRow})`, result.pdPriceWithoutVat),
+      formula(`SUM(M${firstRow}:M${lastRow})`, result.rdPriceWithoutVat),
+      formula(`SUM(N${firstRow}:N${lastRow})`, result.currentPriceWithoutVat),
+      result.normativeTrace.valid ? "Расчёт допустим" : "Расчёт остановлен",
+    ];
+    complex.getRow(totalRow).font = { bold: true };
+    ["J", "K", "L", "M", "N"].forEach((column) => { complex.getCell(`${column}${totalRow}`).numFmt = rub; });
+    widths(complex, [7, 34, 12, 42, 14, 10, 18, 10, 10, 20, 20, 20, 20, 22, 38]);
+  }
 
   const breakdown = workbook.addWorksheet("Разделы", { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] });
   breakdown.getCell("A1").value = "Стоимость по стадиям и разделам";

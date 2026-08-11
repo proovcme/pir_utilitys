@@ -3,6 +3,15 @@ export type SbcCalculationMethod = "natural" | "constructionPercent";
 export type FgisPirKind = "design" | "survey";
 export type SbcComplexRole = "single" | "main" | "embedded" | "blocked" | "repeated";
 
+export interface SbcComplexComponent {
+  id: string;
+  name: string;
+  /** Коэффициент к стоимости раздела ПЗУ по согласованию с заказчиком, п. 18 НЗ № 848/пр. */
+  pzuCoefficient: number;
+  /** Снимок нормативных исходных данных позиции без вложенной корзины комплекса. */
+  input: Partial<ProjectInput>;
+}
+
 export interface ProjectInput {
   projectType?: string;
   address?: string;
@@ -71,6 +80,8 @@ export interface ProjectInput {
   sbcComplexRole?: SbcComplexRole;
   /** Согласованный коэффициент сокращённого объёма работ по пп. 152, 170 Методики № 707/пр. */
   sbcComplexRoleCoefficient?: number;
+  /** Позиции комплекса, каждая из которых рассчитывается отдельно и затем суммируется. */
+  sbcComplexComponents?: SbcComplexComponent[];
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -284,6 +295,27 @@ export interface SbcResult {
     }>;
     pdUnallocatedWithoutVat: number;
     rdUnallocatedWithoutVat: number;
+  };
+  complexBreakdown?: {
+    componentCount: number;
+    components: Array<{
+      id: string;
+      name: string;
+      tableCode: string;
+      objectName: string;
+      indicator: number;
+      indicatorUnit: string;
+      role: SbcComplexRole;
+      roleCoefficient: number;
+      pzuCoefficient: number;
+      pzuReductionWithoutVat: number;
+      basePrice: number;
+      currentPriceWithoutVat: number;
+      pdPriceWithoutVat: number;
+      rdPriceWithoutVat: number;
+      valid: boolean;
+      blockers: string[];
+    }>;
   };
 }
 
