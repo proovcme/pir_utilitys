@@ -520,6 +520,16 @@ export async function exportEstimateWorkbook(
     snapshot.project.sbcFgisIndicatorUnit ?? "ед.",
     snapshot.project.sbcFgisObjectName ?? "",
   );
+  const structuredSbc = Boolean(snapshot.result.sbc.officialBreakdown);
+  const sbcBaseFormula = snapshot.result.sbc.normativeTrace.ruleCode === "8.1"
+    ? "B11+B12*B13"
+    : `ROUND(${snapshot.result.sbc.basePrice},2)`;
+  const sbcFirstConditionCoefficient = structuredSbc
+    ? snapshot.result.sbc.normativeTrace.normSpecificCoefficient
+    : snapshot.project.sbcComplexityCoefficient;
+  const sbcSecondConditionCoefficient = structuredSbc
+    ? snapshot.result.sbc.normativeTrace.specialStatusCoefficient * snapshot.result.sbc.normativeTrace.smrShareCoefficient
+    : snapshot.project.sbcAdjustmentCoefficient;
   const sbcRows: Array<[string, ExcelJS.CellValue, string]> = [
     ["Вид работ", snapshot.project.sbcFgisKind === "survey" ? "Инженерные изыскания" : "Проектные работы", "Определяет применимую группу нормативов и метод расчёта."],
     ["Период индекса", snapshot.project.sbcFgisPeriodLabel, "Квартал, к которому приводится базовая цена."],
@@ -533,12 +543,12 @@ export async function exportEstimateWorkbook(
     ["Натуральный показатель X", snapshot.project.sbcNaturalIndicator, `${indicatorExplanation.label}. ${indicatorExplanation.description}`],
     ["Стоимость строительства", snapshot.project.sbcConstructionCost, "База для процентного метода в уровне цен, предусмотренном нормативом."],
     ["Норматив проектирования", snapshot.project.sbcDesignPercent, "Доля стоимости проектирования для процентного метода: 0,04 = 4%."],
-    ["Коэффициент условий Kусл", snapshot.project.sbcComplexityCoefficient, "Множитель усложняющих условий проектирования с нормативным основанием."],
-    ["Дополнительный коэффициент Kдоп", snapshot.project.sbcAdjustmentCoefficient, "Дополнительный нормативный множитель; 1,00 не изменяет цену."],
+    ["Коэффициент условий норматива", sbcFirstConditionCoefficient, "Для структурированного норматива определяется выбранными условиями."],
+    ["Остальные нормативные коэффициенты", sbcSecondConditionCoefficient, "Специальный статус и коэффициент доли СМР либо ручной коэффициент для неструктурированного документа."],
     [
       "Базовая цена",
       formula(
-        snapshot.project.sbcMethod === "natural" ? "B11+B12*B13" : "B14*B15",
+        sbcBaseFormula,
         snapshot.result.sbc.basePrice,
       ),
       "Шаг 1: Cбаз = a + b × X либо Cстр × p.",
@@ -559,6 +569,19 @@ export async function exportEstimateWorkbook(
     ["Единица натурального показателя", snapshot.project.sbcFgisIndicatorUnit ?? "", `Единица измерения показателя «${indicatorExplanation.label}».`],
     ["Диапазон строки", snapshot.project.sbcFgisIndicatorRange ?? "", "Интервал X, в котором действуют выбранные параметры a и b."],
     ["Страница PDF", snapshot.project.sbcFgisTablePage ?? "", "Страница официального PDF для ручной проверки исходных данных."],
+    ["Расчёт допустим", snapshot.result.sbc.normativeTrace.valid ? "Да" : "Нет", "При блокирующем условии итоговая цена не выдаётся."],
+    ["Применённое правило", snapshot.result.sbc.normativeTrace.ruleCode, snapshot.result.sbc.normativeTrace.ruleTitle],
+    ["Формула правила", snapshot.result.sbc.normativeTrace.formula, "Формула с фактическими исходными значениями."],
+    ["Нормативное основание", snapshot.result.sbc.normativeTrace.source, snapshot.result.sbc.normativeTrace.sourcePage ? `Страница ${snapshot.result.sbc.normativeTrace.sourcePage}.` : ""],
+    ["Коэффициент приведения стоимости", snapshot.result.sbc.normativeTrace.constructionRebaseCoefficient, "Приведение исходной стоимости строительства к уровню цен норматива."],
+    ["Стоимость строительства в уровне норматива", snapshot.result.sbc.normativeTrace.baseConstructionCost ?? 0, "Исходная стоимость × коэффициент приведения."],
+    ["Доля СМР", snapshot.result.sbc.normativeTrace.smrSharePercent / 100, "Доля строительно-монтажных работ в общей стоимости строительства."],
+    ["Коэффициент доли СМР", snapshot.result.sbc.normativeTrace.smrShareCoefficient, "Коэффициент по п. 140 Методики № 707/пр."],
+    ["Коэффициент условий № 848/пр", snapshot.result.sbc.normativeTrace.normSpecificCoefficient, "1,1 при зоне охраны либо не менее трёх факторов стеснённости."],
+    ["Коэффициент специального статуса", snapshot.result.sbc.normativeTrace.specialStatusCoefficient, "Временный коэффициент 1,3 при выполнении всех условий."],
+    ["Общий нормативный коэффициент", snapshot.result.sbc.normativeTrace.totalCoefficient, "Произведение применённых коэффициентов."],
+    ["Блокирующие условия", snapshot.result.sbc.normativeTrace.blockers.join("; "), "Причины остановки расчёта."],
+    ["Предупреждения", snapshot.result.sbc.normativeTrace.warnings.join("; "), "Что необходимо подтвердить исходными документами."],
   ];
   sbc.addRows(sbcRows);
   setColumns(sbc, [34, 44, 78]);

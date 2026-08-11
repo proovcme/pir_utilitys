@@ -15,6 +15,9 @@ import {
   interpolateFgisPercent,
   projectPatchForFgisRow,
   projectPatchForFgisDocument,
+  projectPatchForFgisPercentTable,
+  resolveFgisNaturalPrice,
+  smrShareCoefficient,
 } from "../src/domain/fgisPir";
 
 const fgisPirManifest = manifestJson as {
@@ -123,6 +126,49 @@ describe("FGIS PIR snapshot", () => {
     expect(patch.sbcConstantB).toBe(419);
     expect(patch.sbcFgisTablePage).toBe(8);
     expect(findFgisTableRow(table, "Индивидуальный жилой дом", 200)).toBeUndefined();
+  });
+
+  it("applies formulas 8.2-8.5 outside the published natural range", () => {
+    const document = getFgisTableDocument("b90117ab-5223-4a7a-89ae-a8bcbb88f689")!;
+    const table = document.tables.find((item) => item.code === "3.1")!;
+    const objectName = "Индивидуальный жилой дом";
+
+    expect(resolveFgisNaturalPrice(table, objectName, 75)).toMatchObject({
+      valid: true,
+      ruleCode: "8.2",
+      priceRub: 312_065,
+    });
+    expect(resolveFgisNaturalPrice(table, objectName, 200)).toMatchObject({
+      valid: true,
+      ruleCode: "8.3",
+      priceRub: 603_620,
+    });
+    expect(resolveFgisNaturalPrice(table, objectName, 25)).toMatchObject({
+      valid: true,
+      ruleCode: "8.4-8.5",
+      priceRub: 133_015,
+      extrapolationCoefficient: 0.5,
+    });
+    expect(resolveFgisNaturalPrice(table, objectName, 5)).toMatchObject({
+      valid: false,
+      ruleCode: "unsupported",
+      extrapolationCoefficient: 0.1,
+    });
+  });
+
+  it("rebases construction cost before table 3.18 and resolves the SMR coefficient", () => {
+    const document = getFgisTableDocument("b90117ab-5223-4a7a-89ae-a8bcbb88f689")!;
+    const table = document.percentTables[0];
+    const patch = projectPatchForFgisPercentTable(table, 100_000_000, 0.5);
+    const expected = interpolateFgisPercent(table, 50_000_000);
+
+    expect(patch.sbcConstructionRebaseCoefficient).toBe(0.5);
+    expect(patch.sbcDesignPercent).toBeCloseTo(expected.percent / 100);
+    expect(smrShareCoefficient(65)).toBe(1);
+    expect(smrShareCoefficient(55)).toBe(0.95);
+    expect(smrShareCoefficient(45)).toBe(0.9);
+    expect(smrShareCoefficient(35)).toBe(0.8);
+    expect(smrShareCoefficient(20)).toBe(0.7);
   });
 
   it("explains every structured natural indicator in business terms", () => {

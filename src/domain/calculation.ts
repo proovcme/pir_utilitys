@@ -14,7 +14,11 @@ import {
   fgisPirBreakdownCatalog,
   getFgisBreakdownDocument,
   getFgisBreakdownTable,
+  getFgisTableDocument,
+  interpolateFgisPercent,
   recommendFgisBreakdownObject,
+  resolveFgisNaturalPriceForProject,
+  smrShareCoefficient,
 } from "./fgisPir";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -227,13 +231,98 @@ export function calculateFinanceSummary(
 export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals): SbcResult {
   const method = project.sbcMethod ?? "natural";
   const naturalIndicator = project.sbcNaturalIndicator ?? project.area ?? 0;
-  const baseByNatural = (project.sbcConstantA ?? 0) + (project.sbcConstantB ?? 0) * naturalIndicator;
-  const baseByConstructionCost = (project.sbcConstructionCost ?? 0) * (project.sbcDesignPercent ?? 0);
-  const basePrice = method === "constructionPercent" ? baseByConstructionCost : baseByNatural;
-  const adjustedBasePrice = basePrice * (project.sbcComplexityCoefficient ?? 1) * (project.sbcAdjustmentCoefficient ?? 1);
+  const breakdownDocument = getFgisBreakdownDocument(project.sbcFgisNormGuid);
+  const tableDocument = getFgisTableDocument(project.sbcFgisNormGuid);
+  const isStructuredNorm = Boolean(breakdownDocument && tableDocument);
+  const blockers: string[] = [];
+  const traceWarnings: string[] = [];
+  let ruleCode = method === "natural" ? "8.1" : "8.9-8.11";
+  let ruleTitle = method === "natural" ? "Цена по натуральному показателю" : "Процент от стоимости строительства";
+  let formula = "";
+  let source = method === "natural"
+    ? "п. 130, формула 8.1 Методики № 707/пр"
+    : "пп. 135-139, формулы 8.9-8.11 Методики № 707/пр";
+  let sourcePage: number | undefined = method === "natural" ? 54 : 58;
+  let basePrice = 0;
+  let baseConstructionCost: number | undefined;
+
+  if (project.sbcFgisKind === "survey") {
+    blockers.push("Для инженерных изысканий требуется расчёт состава работ по таблицам показателей затрат выбранного сборника.");
+    ruleCode = "не рассчитывается";
+    ruleTitle = "Каталог нормативов инженерных изысканий";
+    formula = "Σ стоимость отдельных изыскательских работ";
+    source = "Выбранный норматив инженерных изысканий";
+    sourcePage = undefined;
+  } else if (isStructuredNorm && method === "natural") {
+    const resolution = resolveFgisNaturalPriceForProject(project);
+    if (!resolution?.valid) blockers.push(resolution?.blocker ?? "Не удалось сопоставить показатель со структурированной таблицей ФГИС.");
+    basePrice = resolution?.valid ? resolution.priceRub : 0;
+    ruleCode = resolution?.ruleCode ?? "не определено";
+    ruleTitle = resolution?.explanation ?? "Правило расчёта не определено";
+    formula = resolution?.formula ?? "Расчёт не выполнен";
+    source = resolution?.sourceParagraph ?? source;
+    sourcePage = resolution?.sourcePage ?? sourcePage;
+  } else if (isStructuredNorm && method === "constructionPercent") {
+    const rebaseCoefficient = project.sbcConstructionRebaseCoefficient ?? 1;
+    baseConstructionCost = (project.sbcConstructionCost ?? 0) * rebaseCoefficient;
+    const percentTable = tableDocument?.percentTables.find((table) => table.code === project.sbcFgisTableCode);
+    if (!percentTable) blockers.push("Не найдена выбранная таблица процента от стоимости строительства.");
+    if (!(project.sbcConstructionCost > 0)) blockers.push("Введите положительную стоимость строительства.");
+    if (!(rebaseCoefficient > 0)) blockers.push("Введите коэффициент приведения стоимости строительства к уровню цен норматива.");
+    const interpolated = percentTable && baseConstructionCost > 0
+      ? interpolateFgisPercent(percentTable, baseConstructionCost)
+      : undefined;
+    basePrice = interpolated ? baseConstructionCost * interpolated.percent / 100 : 0;
+    formula = interpolated
+      ? `${roundMoney(project.sbcConstructionCost)} × ${rebaseCoefficient} × ${roundMoney(interpolated.percent)}%`
+      : "Расчёт не выполнен";
+    ruleTitle = interpolated?.clamped
+      ? `Процент принят по ${interpolated.clamped === "min" ? "минимальной" : "максимальной"} строке таблицы 3.18`
+      : "Процент определён линейной интерполяцией таблицы 3.18";
+    sourcePage = interpolated?.lower.page ?? sourcePage;
+  } else {
+    basePrice = method === "constructionPercent"
+      ? (project.sbcConstructionCost ?? 0) * (project.sbcDesignPercent ?? 0)
+      : (project.sbcConstantA ?? 0) + (project.sbcConstantB ?? 0) * naturalIndicator;
+    formula = method === "constructionPercent"
+      ? `${project.sbcConstructionCost ?? 0} × ${project.sbcDesignPercent ?? 0}`
+      : `${project.sbcConstantA ?? 0} + ${project.sbcConstantB ?? 0} × ${naturalIndicator}`;
+    traceWarnings.push("Параметры неструктурированного документа введены вручную и должны быть проверены по официальному PDF.");
+  }
+
+  if (isStructuredNorm && project.sbcInformationModel) {
+    blockers.push("Для информационной модели нужны стадийные коэффициенты приложения № 2; этот сценарий пока не автоматизирован.");
+  }
+  if (isStructuredNorm && project.sbcComplexObject) {
+    blockers.push("Для комплекса, встроенного объекта или повторных секций нужен отдельный расчёт по составу объектов и специальным пунктам норматива.");
+  }
+
+  const constrainedFactors = new Set(project.sbcConstrainedSiteFactors ?? []).size;
+  const normSpecificCoefficient = isStructuredNorm && (constrainedFactors >= 3 || project.sbcHeritageProtectionZone) ? 1.1 : 1;
+  const specialRequested = Boolean(project.sbcSpecialDefenseStatus && project.sbcParallelDesignConstruction);
+  const specialPeriodEligible = project.sbcFgisPeriodLabel.includes("2026") && project.sbcFgisPeriodId === 426;
+  const specialStatusCoefficient = isStructuredNorm && specialRequested && specialPeriodEligible ? 1.3 : 1;
+  if (specialRequested && !specialPeriodEligible) {
+    traceWarnings.push("Коэффициент 1,3 не применён: проверьте дату расчёта и действие временной нормы приказа № 180/пр.");
+  } else if (specialStatusCoefficient === 1.3) {
+    traceWarnings.push("Коэффициент 1,3 применён для специального объекта при параллельном проектировании и строительстве; подтвердите дату расчёта не ранее 17.05.2026 и не позднее 31.12.2026.");
+  }
+  const smrSharePercent = project.sbcSmrSharePercent ?? 60;
+  if (method === "constructionPercent" && (smrSharePercent < 0 || smrSharePercent > 100)) {
+    blockers.push("Доля СМР должна быть от 0 до 100%.");
+  }
+  const appliedSmrCoefficient = isStructuredNorm && method === "constructionPercent"
+    ? smrShareCoefficient(smrSharePercent)
+    : 1;
+  const legacyCoefficient = isStructuredNorm
+    ? 1
+    : (project.sbcComplexityCoefficient ?? 1) * (project.sbcAdjustmentCoefficient ?? 1);
+  const totalCoefficient = normSpecificCoefficient * specialStatusCoefficient * appliedSmrCoefficient * legacyCoefficient;
+  const valid = blockers.length === 0;
+  if (!valid) basePrice = 0;
+  const adjustedBasePrice = basePrice * totalCoefficient;
   const currentPriceWithoutVat = adjustedBasePrice * (project.sbcIndexToCurrent ?? 1);
   const currentPriceWithVat = currentPriceWithoutVat * (1 + (project.vatRate ?? 0));
-  const breakdownDocument = getFgisBreakdownDocument(project.sbcFgisNormGuid);
   const pdShare = breakdownDocument
     ? breakdownDocument.stageShares.pd / 100
     : Math.max(0, project.sbcPdShare ?? 0);
@@ -248,15 +337,15 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
   const differenceWithoutVat = totals.totalWithoutVat - currentPriceWithoutVat;
   const differenceWithVat = totals.totalWithVat - currentPriceWithVat;
   const notes = [
-    method === "natural"
-      ? "Базовая цена рассчитана по натуральному показателю: Cбаз = a + b × X."
-      : "Базовая цена рассчитана процентом от стоимости строительства: Cбаз = Cстр × p.",
-    `Условия проектирования: Cусл = Cбаз × Kусл × Kдоп = ${roundMoney(adjustedBasePrice)} ₽.`,
+    `${ruleCode}: ${ruleTitle}.`,
+    `Применённый общий коэффициент: ${roundMoney(totalCoefficient)}; цена с условиями: ${roundMoney(adjustedBasePrice)} ₽.`,
     `Текущий уровень цен: Cтек = Cусл × I = ${roundMoney(currentPriceWithoutVat)} ₽ без НДС.`,
     pdShare + rdShare > 1
       ? "Сумма долей ПД и РД больше 100%; доли нормализованы пропорционально."
       : "Не распределённый между ПД и РД остаток отражается как прочие работы.",
     `Нормативный срок: T = Tбаз × Kсрок = ${roundMoney(normativeDurationDays)} дн.`,
+    ...blockers.map((item) => `Расчёт остановлен: ${item}`),
+    ...traceWarnings,
   ];
 
   const breakdownTable = breakdownDocument
@@ -324,6 +413,23 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
     differenceWithVat: roundMoney(differenceWithVat),
     ratioToSbc: roundMoney(currentPriceWithoutVat > 0 ? totals.totalWithoutVat / currentPriceWithoutVat - 1 : 0),
     notes,
+    normativeTrace: {
+      valid,
+      ruleCode,
+      ruleTitle,
+      formula,
+      source,
+      sourcePage,
+      baseConstructionCost: baseConstructionCost === undefined ? undefined : roundMoney(baseConstructionCost),
+      constructionRebaseCoefficient: project.sbcConstructionRebaseCoefficient ?? 1,
+      smrSharePercent,
+      smrShareCoefficient: appliedSmrCoefficient,
+      normSpecificCoefficient,
+      specialStatusCoefficient,
+      totalCoefficient: roundMoney(totalCoefficient),
+      blockers,
+      warnings: traceWarnings,
+    },
     officialBreakdown,
   };
 }

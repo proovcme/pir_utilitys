@@ -16,6 +16,7 @@ import {
   projectPatchForFgisPercentTable,
   projectPatchForFgisRow,
   recommendFgisBreakdownObject,
+  resolveFgisNaturalPrice,
 } from "../domain/fgisPir";
 import type { FgisPirKind, ProjectInput, SbcResult } from "../domain/types";
 
@@ -25,6 +26,14 @@ const currency = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
 });
 const number = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+
+const constrainedSiteFactors = [
+  ["traffic", "Движение транспорта или пешеходов ближе 50 м"],
+  ["utilities", "Подземные сети требуют переноса или приостановки"],
+  ["nearby", "Существующие здания или сохраняемые насаждения ближе 50 м"],
+  ["storage", "Нет площадки для складирования материалов"],
+  ["crane", "Ограничен поворот стрелы крана по ПОС"],
+] as const;
 
 function NumericField({
   label,
@@ -114,6 +123,10 @@ export function FgisPirCalculator({
   const selectedRow = selectedTable
     ? findFgisTableRow(selectedTable, selectedObject, project.sbcNaturalIndicator)
     : undefined;
+  const naturalResolution = selectedTable
+    ? resolveFgisNaturalPrice(selectedTable, selectedObject, project.sbcNaturalIndicator)
+    : undefined;
+  const appliedRow = selectedRow ?? naturalResolution?.sourceRow;
   const breakdownDocument = selectedDocument
     ? getFgisBreakdownDocument(selectedDocument.guid)
     : undefined;
@@ -135,7 +148,10 @@ export function FgisPirCalculator({
     selectedBreakdownTable?.objects.find((item) => item.id === project.sbcFgisBreakdownObjectId) ??
     recommendedBreakdownObject;
   const interpolatedPercent = selectedPercentTable
-    ? interpolateFgisPercent(selectedPercentTable, project.sbcConstructionCost)
+    ? interpolateFgisPercent(
+        selectedPercentTable,
+        project.sbcConstructionCost * (project.sbcConstructionRebaseCoefficient ?? 1),
+      )
     : undefined;
 
   useEffect(() => {
@@ -179,7 +195,11 @@ export function FgisPirCalculator({
 
   useEffect(() => {
     if (!selectedPercentTable) return;
-    const patch = projectPatchForFgisPercentTable(selectedPercentTable, project.sbcConstructionCost);
+    const patch = projectPatchForFgisPercentTable(
+      selectedPercentTable,
+      project.sbcConstructionCost,
+      project.sbcConstructionRebaseCoefficient ?? 1,
+    );
     if (
       project.sbcMethod !== patch.sbcMethod ||
       project.sbcDesignPercent !== patch.sbcDesignPercent ||
@@ -328,7 +348,19 @@ export function FgisPirCalculator({
       onChange({ sbcConstructionCost: value });
       return;
     }
-    onChange(projectPatchForFgisPercentTable(selectedPercentTable, value));
+    onChange(projectPatchForFgisPercentTable(
+      selectedPercentTable,
+      value,
+      project.sbcConstructionRebaseCoefficient ?? 1,
+    ));
+  }
+
+  function changeConstructionRebaseCoefficient(value: number) {
+    if (!selectedPercentTable) {
+      onChange({ sbcConstructionRebaseCoefficient: value });
+      return;
+    }
+    onChange(projectPatchForFgisPercentTable(selectedPercentTable, project.sbcConstructionCost, value));
   }
 
   function selectObject(objectName: string) {
@@ -345,18 +377,24 @@ export function FgisPirCalculator({
       onChange({ sbcNaturalIndicator: indicator });
       return;
     }
-    const row = findFgisTableRow(selectedTable, selectedObject, indicator);
+    const resolution = resolveFgisNaturalPrice(selectedTable, selectedObject, indicator);
+    const row = resolution.sourceRow;
     onChange(
       row
         ? projectPatchForFgisRow(selectedTable, row, indicator)
         : {
             sbcNaturalIndicator: indicator,
-            sbcConstantA: 0,
-            sbcConstantB: 0,
             sbcFgisIndicatorRange: "",
             sbcFgisTablePage: undefined,
           },
     );
+  }
+
+  function toggleConstrainedFactor(id: string, checked: boolean) {
+    const next = new Set(project.sbcConstrainedSiteFactors ?? []);
+    if (checked) next.add(id);
+    else next.delete(id);
+    onChange({ sbcConstrainedSiteFactors: [...next] });
   }
 
   if (!selectedDocument) {
@@ -364,16 +402,16 @@ export function FgisPirCalculator({
   }
 
   const baseFormula =
-    project.sbcMethod === "natural"
+    result.normativeTrace.formula || (project.sbcMethod === "natural"
       ? `${currency.format(project.sbcConstantA)} + ${currency.format(project.sbcConstantB)}/${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."} × ${number.format(project.sbcNaturalIndicator)} ${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."}`
-      : `${currency.format(project.sbcConstructionCost)} × ${number.format(project.sbcDesignPercent * 100)}%`;
+      : `${currency.format(project.sbcConstructionCost)} × ${number.format(project.sbcDesignPercent * 100)}%`);
   const isSurveyMethod = kind === "survey";
   const indicatorUnit = selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед.";
   const indicatorExplanation = explainFgisIndicator(
     indicatorUnit,
     selectedRow?.objectName ?? project.sbcFgisObjectName ?? selectedObject,
   );
-  const coefficientProduct = project.sbcComplexityCoefficient * project.sbcAdjustmentCoefficient;
+  const coefficientProduct = result.normativeTrace.totalCoefficient;
   const stageShareSum = Math.max(0, project.sbcPdShare) + Math.max(0, project.sbcRdShare);
   const stageShareDenominator = stageShareSum > 1 ? stageShareSum : 1;
   const effectivePdShare = Math.max(0, project.sbcPdShare) / stageShareDenominator;
@@ -502,12 +540,27 @@ export function FgisPirCalculator({
                   </div>
                   <div className="fgis-indicator-workbench">
                     <NumericField
-                      label="Сметная стоимость строительства"
+                      label="Исходная стоимость строительства"
                       value={project.sbcConstructionCost}
                       step={1_000_000}
                       suffix="₽"
-                      hint="Введите стоимость строительства в уровне цен на 01.01.2021. Это стоимость строительства объекта, а не стоимость проектирования."
+                      hint="СМР, оборудование, мебель и инвентарь. Укажите стоимость в имеющемся уровне цен."
                       onChange={changeConstructionCost}
+                    />
+                    <NumericField
+                      label="Коэффициент к уровню 01.01.2021"
+                      value={project.sbcConstructionRebaseCoefficient ?? 1}
+                      step={0.01}
+                      hint="Если стоимость уже дана на 01.01.2021, оставьте 1. Иначе укажите документированный коэффициент пересчёта."
+                      onChange={changeConstructionRebaseCoefficient}
+                    />
+                    <NumericField
+                      label="Доля СМР"
+                      value={project.sbcSmrSharePercent ?? 60}
+                      step={1}
+                      suffix="%"
+                      hint="Доля строительно-монтажных работ в общей стоимости строительства. Она определяет коэффициент по п. 140 Методики."
+                      onChange={(value) => onChange({ sbcSmrSharePercent: value })}
                     />
                     {interpolatedPercent ? (
                       <div className="fgis-applied-row">
@@ -516,8 +569,9 @@ export function FgisPirCalculator({
                           <strong>Норматив выбран автоматически</strong>
                         </div>
                         <dl>
-                          <div><dt>Стоимость строительства</dt><dd>{currency.format(project.sbcConstructionCost)}</dd></div>
+                          <div><dt>Стоимость в уровне норматива</dt><dd>{currency.format(project.sbcConstructionCost * (project.sbcConstructionRebaseCoefficient ?? 1))}</dd></div>
                           <div><dt>Норматив проектирования</dt><dd>{number.format(interpolatedPercent.percent)}% от стоимости строительства</dd></div>
+                          <div><dt>Коэффициент доли СМР</dt><dd>{number.format(result.normativeTrace.smrShareCoefficient)}</dd></div>
                           <div><dt>Интервал</dt><dd>{interpolatedPercent.lower.constructionCostMillionRub}–{interpolatedPercent.upper.constructionCostMillionRub} млн ₽</dd></div>
                           <div><dt>Правило</dt><dd>{interpolatedPercent.clamped ? "Применено крайнее опубликованное значение без экстраполяции" : "Значение определено интерполяцией между соседними строками"}</dd></div>
                           <div><dt>Источник</dt><dd>таблица 3.18, стр. {interpolatedPercent.lower.page}</dd></div>
@@ -557,38 +611,32 @@ export function FgisPirCalculator({
                       hint={`${indicatorExplanation.description} ${indicatorExplanation.sourceHint}`}
                       onChange={changeNaturalIndicator}
                     />
-                    {selectedRow ? (
+                    {naturalResolution?.valid && appliedRow ? (
                       <div className="fgis-applied-row">
                         <div className="fgis-applied-row-title">
                           <FileCheck2 size={18} />
-                          <strong>Строка выбрана автоматически</strong>
+                          <strong>{naturalResolution.ruleCode === "8.1" ? "Строка выбрана автоматически" : `Применена формула ${naturalResolution.ruleCode}`}</strong>
                         </div>
                         <dl>
                           <div><dt>Показатель</dt><dd>{indicatorExplanation.label}</dd></div>
-                          <div><dt>Диапазон</dt><dd>{selectedRow.rangeLabel} {selectedRow.unit}</dd></div>
-                          <div><dt>Постоянная a</dt><dd>{number.format(selectedRow.aThousandRub)} тыс. ₽ — фиксированная часть базовой цены</dd></div>
-                          <div><dt>Показатель b</dt><dd>{number.format(selectedRow.bThousandRubPerUnit)} тыс. ₽/{selectedRow.unit} — цена единицы X</dd></div>
-                          <div><dt>Источник</dt><dd>таблица {selectedTable.code}, стр. {selectedRow.page}</dd></div>
+                          <div><dt>Опорный диапазон</dt><dd>{appliedRow.rangeLabel} {appliedRow.unit}</dd></div>
+                          <div><dt>Постоянная a</dt><dd>{number.format(appliedRow.aThousandRub)} тыс. ₽ — фиксированная часть базовой цены</dd></div>
+                          <div><dt>Показатель b</dt><dd>{number.format(appliedRow.bThousandRubPerUnit)} тыс. ₽/{appliedRow.unit} — цена единицы X</dd></div>
+                          <div><dt>Правило</dt><dd>{naturalResolution.explanation}</dd></div>
+                          <div><dt>Источник</dt><dd>таблица {selectedTable.code}, стр. {appliedRow.page}; {naturalResolution.sourceParagraph}</dd></div>
                         </dl>
                       </div>
                     ) : (
                       <div className="fgis-method-state warning compact">
                         <CircleAlert size={18} />
                         <div>
-                          <strong>Значение вне опубликованных диапазонов</strong>
-                          <p>Выберите значение из таблицы или проверьте правила интерполяции и экстраполяции в документе.</p>
+                          <strong>Расчёт для этого значения невозможен</strong>
+                          <p>{naturalResolution?.blocker ?? "Для показателя нет применимого нормативного правила."}</p>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <details className="fgis-manual-values">
-                    <summary>Проверить или изменить a и b вручную</summary>
-                    <div className="fgis-input-grid">
-                      <NumericField label="Постоянная a" value={project.sbcConstantA} step={1000} suffix="₽" hint="Фиксированная часть базовой цены из строки нормативной таблицы, в рублях базового уровня цен." onChange={(value) => onChange({ sbcConstantA: value })} />
-                      <NumericField label="Показатель b" value={project.sbcConstantB} step={1} suffix={`₽/${indicatorUnit}`} hint="Стоимость одной единицы натурального показателя X в базовом уровне цен." onChange={(value) => onChange({ sbcConstantB: value })} />
-                    </div>
-                  </details>
                 </>
               ) : (
                 <>
@@ -669,8 +717,24 @@ export function FgisPirCalculator({
           <details className="fgis-advanced">
             <summary>Условия проектирования и срок</summary>
             <div className="fgis-input-grid">
-              <NumericField label="Коэффициент условий Kусл" value={project.sbcComplexityCoefficient} step={0.05} hint="Учитывает усложняющие условия проектирования. Применяйте только при наличии основания в нормативе." onChange={(value) => onChange({ sbcComplexityCoefficient: value })} />
-              <NumericField label="Доп. коэффициент Kдоп" value={project.sbcAdjustmentCoefficient} step={0.05} hint="Дополнительный множитель по отдельному пункту методики или заданию. Значение 1,00 ничего не меняет." onChange={(value) => onChange({ sbcAdjustmentCoefficient: value })} />
+              {breakdownDocument ? (
+                <>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcHeritageProtectionZone)} onChange={(event) => onChange({ sbcHeritageProtectionZone: event.target.checked })} /><span>Строительство в зоне охраны объекта культурного наследия</span></label>
+                  {constrainedSiteFactors.map(([id, label]) => (
+                    <label className="toggle" key={id}><input type="checkbox" checked={(project.sbcConstrainedSiteFactors ?? []).includes(id)} onChange={(event) => toggleConstrainedFactor(id, event.target.checked)} /><span>{label}</span></label>
+                  ))}
+                  <small className="field-hint">Коэффициент 1,1 применяется для зоны охраны либо при наличии не менее трёх из пяти факторов стеснённости.</small>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcSpecialDefenseStatus)} onChange={(event) => onChange({ sbcSpecialDefenseStatus: event.target.checked })} /><span>Специальный объект обороны или безопасности</span></label>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcParallelDesignConstruction)} onChange={(event) => onChange({ sbcParallelDesignConstruction: event.target.checked })} /><span>Проектирование и строительство выполняются параллельно</span></label>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcInformationModel)} onChange={(event) => onChange({ sbcInformationModel: event.target.checked })} /><span>Требуется информационная модель</span></label>
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} onChange={(event) => onChange({ sbcComplexObject: event.target.checked })} /><span>Комплекс, встроенный объект или повторяющиеся секции</span></label>
+                </>
+              ) : (
+                <>
+                  <NumericField label="Коэффициент условий Kусл" value={project.sbcComplexityCoefficient} step={0.05} hint="Введите только коэффициент с основанием в выбранном документе." onChange={(value) => onChange({ sbcComplexityCoefficient: value })} />
+                  <NumericField label="Дополнительный коэффициент" value={project.sbcAdjustmentCoefficient} step={0.05} hint="Введите значение и проверьте основание по официальному PDF." onChange={(value) => onChange({ sbcAdjustmentCoefficient: value })} />
+                </>
+              )}
               {!breakdownDocument ? <NumericField label="Доля стадии ПД" value={project.sbcPdShare} step={0.01} suffix={`${number.format(project.sbcPdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к проектной документации." onChange={(value) => onChange({ sbcPdShare: value })} /> : null}
               {!breakdownDocument ? <NumericField label="Доля стадии РД" value={project.sbcRdShare} step={0.01} suffix={`${number.format(project.sbcRdShare * 100)}%`} hint="Часть текущей нормативной цены, относимая к рабочей документации." onChange={(value) => onChange({ sbcRdShare: value })} /> : null}
               <NumericField label="Базовый срок Tбаз" value={project.sbcBaseDurationDays} step={1} suffix="дн." hint="Исходная нормативная продолжительность до применения коэффициента срока." onChange={(value) => onChange({ sbcBaseDurationDays: value })} />
@@ -686,6 +750,11 @@ export function FgisPirCalculator({
               <>
                 <strong className="fgis-result-pending">Требуется состав работ</strong>
                 <small>Итог не подменяется формулой проектных работ</small>
+              </>
+            ) : !result.normativeTrace.valid ? (
+              <>
+                <strong className="fgis-result-pending">Расчёт остановлен</strong>
+                <small>{result.normativeTrace.blockers[0]}</small>
               </>
             ) : (
               <>
@@ -707,7 +776,7 @@ export function FgisPirCalculator({
                 </li>
                 <li>
                   <i>2</i>
-                  <div><strong>Условия проектирования</strong><code>{currency.format(result.basePrice)} × {number.format(project.sbcComplexityCoefficient)} × {number.format(project.sbcAdjustmentCoefficient)}</code><small>= {currency.format(result.adjustedBasePrice)}</small></div>
+                  <div><strong>Нормативные условия</strong><code>{currency.format(result.basePrice)} × {number.format(result.normativeTrace.totalCoefficient)}</code><small>= {currency.format(result.adjustedBasePrice)}</small></div>
                 </li>
                 <li>
                   <i>3</i>
@@ -741,8 +810,8 @@ export function FgisPirCalculator({
                 <>
                   <p>{selectedPercentTable ? "Калькулятор определяет норматив проектирования по стоимости строительства и таблице 3.18." : "Калькулятор выбирает строку официальной таблицы по объекту и диапазону показателя. Денежные параметры a и b переводятся из тыс. ₽ в ₽."}</p>
                   <ol>
-                    <li><b>Базовая цена:</b> Cбаз = a + b × X либо Cстр × p.</li>
-                    <li><b>Условия:</b> Cусл = Cбаз × Kусл × Kдоп. Текущий общий множитель: {number.format(coefficientProduct)}.</li>
+                    <li><b>Базовая цена:</b> применено правило {result.normativeTrace.ruleCode}: {result.normativeTrace.ruleTitle.toLocaleLowerCase("ru-RU")}.</li>
+                    <li><b>Условия:</b> применяются только выбранные условия с нормативным основанием. Общий множитель: {number.format(coefficientProduct)}.</li>
                     <li><b>Текущий уровень цен:</b> Cтек = Cусл × I. Индекс I = {number.format(project.sbcIndexToCurrent)}.</li>
                     <li><b>НДС:</b> Cндс = Cтек × (1 + {number.format(project.vatRate)}).</li>
                     <li><b>Стадии:</b> ПД {number.format(effectivePdShare * 100)}%, РД {number.format(effectiveRdShare * 100)}%, прочее {number.format(effectiveOtherShare * 100)}%.</li>
@@ -750,6 +819,9 @@ export function FgisPirCalculator({
                     <li><b>Срок:</b> T = {number.format(project.sbcBaseDurationDays)} × {number.format(project.sbcDurationCoefficient)} = {number.format(result.normativeDurationDays)} дн.</li>
                   </ol>
                   <p>Расчёт не зависит от зарплатных ставок, состава команды, трудозатрат и коммерческой маржи. Эти данные относятся к отдельной коммерческой калькуляции.</p>
+                  <p><b>Нормативный источник:</b> {result.normativeTrace.source}{result.normativeTrace.sourcePage ? `, стр. ${result.normativeTrace.sourcePage}` : ""}.</p>
+                  {result.normativeTrace.blockers.map((item) => <p className="fgis-methodology-warning" key={item}>{item}</p>)}
+                  {result.normativeTrace.warnings.map((item) => <p className="fgis-methodology-warning" key={item}>{item}</p>)}
                   {stageShareSum > 1 ? <p className="fgis-methodology-warning">Сумма введённых долей ПД и РД больше 100%, поэтому калькулятор нормализовал их пропорционально.</p> : null}
                 </>
               )}
@@ -758,8 +830,7 @@ export function FgisPirCalculator({
                 <div><dt>a</dt><dd>фиксированная часть базовой цены из строки нормативной таблицы;</dd></div>
                 <div><dt>b</dt><dd>цена одной единицы натурального показателя в базовом уровне цен;</dd></div>
                 <div><dt>X</dt><dd>{indicatorExplanation.label.toLocaleLowerCase("ru-RU")}: {indicatorExplanation.description}</dd></div>
-                <div><dt>Kусл</dt><dd>коэффициент условий или сложности проектирования;</dd></div>
-                <div><dt>Kдоп</dt><dd>дополнительный коэффициент с отдельным нормативным основанием;</dd></div>
+                <div><dt>K</dt><dd>коэффициент применяется только при выполнении описанного в нормативе условия;</dd></div>
                 <div><dt>I</dt><dd>индекс пересчёта из базового уровня цен документа в выбранный квартал ФГИС;</dd></div>
                 <div><dt>ПД / РД</dt><dd>распределение рассчитанной цены между проектной и рабочей документацией;</dd></div>
               </dl>
@@ -774,19 +845,21 @@ export function FgisPirCalculator({
               <div><dt>Индекс</dt><dd>{selectedDocument.index ?? "не опубликован"}</dd></div>
               <div><dt>Утверждение</dt><dd>{selectedDocument.approvingAct ?? "не указано"}</dd></div>
               <div><dt>Норматив</dt><dd>{selectedDocument.name}</dd></div>
-              {selectedRow && selectedTable ? (
+              {appliedRow && selectedTable ? (
                 <>
                   <div><dt>Таблица</dt><dd>{selectedTable.code} · {selectedTable.title}</dd></div>
-                  <div><dt>Объект</dt><dd>{selectedRow.objectName}</dd></div>
-                  <div><dt>Показатель</dt><dd>{indicatorExplanation.label}: {number.format(project.sbcNaturalIndicator)} {selectedRow.unit}</dd></div>
-                  <div><dt>Диапазон</dt><dd>{selectedRow.rangeLabel}</dd></div>
-                  <div><dt>Строка PDF</dt><dd>стр. {selectedRow.page}</dd></div>
+                  <div><dt>Объект</dt><dd>{appliedRow.objectName}</dd></div>
+                  <div><dt>Показатель</dt><dd>{indicatorExplanation.label}: {number.format(project.sbcNaturalIndicator)} {appliedRow.unit}</dd></div>
+                  <div><dt>Опорный диапазон</dt><dd>{appliedRow.rangeLabel}</dd></div>
+                  <div><dt>Правило</dt><dd>{result.normativeTrace.ruleCode}</dd></div>
+                  <div><dt>Строка PDF</dt><dd>стр. {appliedRow.page}</dd></div>
                 </>
               ) : null}
               {selectedPercentTable && interpolatedPercent ? (
                 <>
                   <div><dt>Таблица</dt><dd>{selectedPercentTable.code} · {selectedPercentTable.title}</dd></div>
-                  <div><dt>Стоимость строительства</dt><dd>{currency.format(project.sbcConstructionCost)}</dd></div>
+                  <div><dt>Исходная стоимость</dt><dd>{currency.format(project.sbcConstructionCost)}</dd></div>
+                  <div><dt>В уровне норматива</dt><dd>{currency.format(result.normativeTrace.baseConstructionCost ?? 0)}</dd></div>
                   <div><dt>Норматив</dt><dd>{number.format(interpolatedPercent.percent)}%</dd></div>
                   <div><dt>Строка PDF</dt><dd>стр. {interpolatedPercent.lower.page}</dd></div>
                 </>

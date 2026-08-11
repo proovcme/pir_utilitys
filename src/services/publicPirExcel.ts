@@ -33,6 +33,16 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   calculation.getRow(4).values = ["Показатель", "Значение", "Как используется"];
   header(calculation.getRow(4));
 
+  const structured = Boolean(result.officialBreakdown);
+  const basePriceFormula = result.normativeTrace.ruleCode === "8.1"
+    ? "B9+B10*B11"
+    : `ROUND(${result.basePrice},2)`;
+  const firstConditionCoefficient = structured
+    ? result.normativeTrace.normSpecificCoefficient
+    : project.sbcComplexityCoefficient;
+  const secondConditionCoefficient = structured
+    ? result.normativeTrace.specialStatusCoefficient * result.normativeTrace.smrShareCoefficient
+    : project.sbcAdjustmentCoefficient;
   const rows: Array<[string, ExcelJS.CellValue, string]> = [
     ["Норматив", project.sbcCollectionName, "Официальный документ, по которому выполнен расчёт."],
     ["Период", project.sbcFgisPeriodLabel, "Текущий квартал для пересчёта цены."],
@@ -43,9 +53,9 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Натуральный показатель", project.sbcNaturalIndicator, `Введённое значение, ${project.sbcFgisIndicatorUnit || "ед."}.`],
     ["Стоимость строительства", project.sbcConstructionCost, "Используется только для таблицы 3.18."],
     ["Норматив от стоимости", project.sbcDesignPercent, "Используется только для таблицы 3.18."],
-    ["Базовая цена", formula(project.sbcMethod === "natural" ? "B9+B10*B11" : "B12*B13", result.basePrice), "a + b × X либо стоимость строительства × норматив."],
-    ["Коэффициент условий", project.sbcComplexityCoefficient, "Применяется только при наличии нормативного основания."],
-    ["Дополнительный коэффициент", project.sbcAdjustmentCoefficient, "Применяется только при наличии нормативного основания."],
+    ["Базовая цена", formula(basePriceFormula, result.basePrice), `Результат правила ${result.normativeTrace.ruleCode}.`],
+    ["Коэффициент условий норматива", firstConditionCoefficient, "Для НЗ № 848/пр определяется выбранными условиями, а не свободным вводом."],
+    ["Остальные нормативные коэффициенты", secondConditionCoefficient, "Коэффициент специального статуса и, при таблице 3.18, коэффициент доли СМР."],
     ["Цена с коэффициентами", formula("B14*B15*B16", result.adjustedBasePrice), "Базовая цена × коэффициенты."],
     ["Индекс текущего периода", project.sbcIndexToCurrent, "Перевод базовой цены в выбранный квартал."],
     ["Текущая стоимость без НДС", formula("B17*B18", result.currentPriceWithoutVat), "Нормативная стоимость ПД + РД."],
@@ -57,11 +67,24 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Итого с НДС", formula("B19*(1+B24)", result.currentPriceWithVat), "Стоимость проектных работ с НДС."],
     ["Источник", project.sbcFgisSourceUrl, "Прямая ссылка на официальный документ ФГИС ЦС."],
     ["Контакты", "OVC.me", "Вопросы по применению калькулятора."],
+    ["Расчёт допустим", result.normativeTrace.valid ? "Да" : "Нет", "При наличии блокирующего условия итоговая цена не выдаётся."],
+    ["Применённое правило", result.normativeTrace.ruleCode, result.normativeTrace.ruleTitle],
+    ["Формула", result.normativeTrace.formula, "Подробная формула применённого нормативного правила."],
+    ["Нормативное основание", result.normativeTrace.source, result.normativeTrace.sourcePage ? `Страница ${result.normativeTrace.sourcePage}.` : ""],
+    ["Коэффициент приведения стоимости", result.normativeTrace.constructionRebaseCoefficient, "Приведение исходной стоимости строительства к уровню цен норматива."],
+    ["Стоимость строительства в уровне норматива", result.normativeTrace.baseConstructionCost ?? 0, "Исходная стоимость × коэффициент приведения."],
+    ["Доля СМР", result.normativeTrace.smrSharePercent / 100, "Доля строительно-монтажных работ в стоимости строительства."],
+    ["Коэффициент доли СМР", result.normativeTrace.smrShareCoefficient, "Коэффициент по п. 140 Методики № 707/пр."],
+    ["Коэффициент условий № 848/пр", result.normativeTrace.normSpecificCoefficient, "1,1 при зоне охраны либо не менее трёх факторов стеснённости."],
+    ["Коэффициент специального статуса", result.normativeTrace.specialStatusCoefficient, "1,3 при одновременном выполнении установленных условий и в период действия нормы."],
+    ["Общий коэффициент", result.normativeTrace.totalCoefficient, "Произведение всех применённых нормативных коэффициентов."],
+    ["Блокирующие условия", result.normativeTrace.blockers.join("; "), "Причины, по которым итоговый расчёт остановлен."],
+    ["Предупреждения", result.normativeTrace.warnings.join("; "), "Условия, которые нужно подтвердить документами."],
   ];
   calculation.addRows(rows);
   widths(calculation, [34, 52, 72]);
   [9, 10, 12, 14, 17, 19, 21, 23, 25].forEach((row) => { calculation.getCell(`B${row}`).numFmt = rub; });
-  [13, 20, 22, 24].forEach((row) => { calculation.getCell(`B${row}`).numFmt = percent; });
+  [13, 20, 22, 24, 34].forEach((row) => { calculation.getCell(`B${row}`).numFmt = percent; });
   calculation.getCell("B26").value = { text: project.sbcFgisSourceUrl, hyperlink: project.sbcFgisSourceUrl };
 
   const breakdown = workbook.addWorksheet("Разделы", { views: [{ showGridLines: false, state: "frozen", ySplit: 4 }] });

@@ -168,6 +168,35 @@ describe("calculateEstimate", () => {
     expect(result.sbc.differenceWithoutVat).toBe(-443_795.2);
   });
 
+  it("derives structured normative coefficients and blocks unsupported scenarios", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcNaturalIndicator: 100,
+      sbcConstrainedSiteFactors: ["traffic", "utilities", "storage"],
+      sbcSpecialDefenseStatus: true,
+      sbcParallelDesignConstruction: true,
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.valid).toBe(true);
+    expect(result.normativeTrace.ruleCode).toBe("8.1");
+    expect(result.normativeTrace.normSpecificCoefficient).toBe(1.1);
+    expect(result.normativeTrace.specialStatusCoefficient).toBe(1.3);
+    expect(result.normativeTrace.totalCoefficient).toBe(1.43);
+    expect(result.basePrice).toBe(358_100);
+    expect(result.adjustedBasePrice).toBe(512_083);
+
+    const blocked = calculateEstimate({ ...project, sbcInformationModel: true }, catalog).sbc;
+    expect(blocked.normativeTrace.valid).toBe(false);
+    expect(blocked.currentPriceWithoutVat).toBe(0);
+    expect(blocked.normativeTrace.blockers[0]).toContain("информационной модели");
+  });
+
   it("contains the expanded RD engineering marks and maps them to rate groups", () => {
     const expectedMarks = [
       "ЭФ", "ЭН", "ЭОМ", "ЭС", "ЭГ", "АСКУЭ", "ЗМ", "ВК", "ВПВ", "НВ", "АСКУВ", "НК",

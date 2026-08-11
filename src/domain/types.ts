@@ -22,6 +22,10 @@ export interface ProjectInput {
   sbcConstantA: number;
   sbcConstantB: number;
   sbcConstructionCost: number;
+  /** Коэффициент приведения исходной стоимости строительства к уровню цен норматива. */
+  sbcConstructionRebaseCoefficient?: number;
+  /** Доля строительно-монтажных работ в стоимости строительства, %. */
+  sbcSmrSharePercent?: number;
   sbcDesignPercent: number;
   sbcIndexToCurrent: number;
   sbcComplexityCoefficient: number;
@@ -45,6 +49,13 @@ export interface ProjectInput {
   sbcFgisTablePage?: number;
   sbcFgisBreakdownTableCode?: string;
   sbcFgisBreakdownObjectId?: string;
+  /** Факторы стеснённости площадки по п. 17 НЗ № 848/пр. */
+  sbcConstrainedSiteFactors?: string[];
+  sbcHeritageProtectionZone?: boolean;
+  sbcSpecialDefenseStatus?: boolean;
+  sbcParallelDesignConstruction?: boolean;
+  sbcInformationModel?: boolean;
+  sbcComplexObject?: boolean;
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -214,6 +225,23 @@ export interface SbcResult {
   differenceWithVat: number;
   ratioToSbc: number;
   notes: string[];
+  normativeTrace: {
+    valid: boolean;
+    ruleCode: string;
+    ruleTitle: string;
+    formula: string;
+    source: string;
+    sourcePage?: number;
+    baseConstructionCost?: number;
+    constructionRebaseCoefficient: number;
+    smrSharePercent: number;
+    smrShareCoefficient: number;
+    normSpecificCoefficient: number;
+    specialStatusCoefficient: number;
+    totalCoefficient: number;
+    blockers: string[];
+    warnings: string[];
+  };
   officialBreakdown?: {
     tableCode: string;
     objectId: string;

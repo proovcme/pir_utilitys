@@ -64,7 +64,7 @@ describe("exportEstimateWorkbook", () => {
     expect(constructor.getCell("W2").value).toMatchObject({ formula: expect.stringContaining("VLOOKUP") });
     expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("SUMIFS") });
     expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("Подряд") });
-    expect(sbc.getCell("B18").value).toMatchObject({ formula: "B11+B12*B13" });
+    expect(sbc.getCell("B18").value).toMatchObject({ formula: expect.stringContaining("ROUND(") });
     expect(sbc.getCell("B20").value).toMatchObject({ formula: "B19*B9" });
     expect(sbc.getCell("B22").value).toMatchObject({ formula: "B20*(1+B21)" });
     expect(sbc.getCell("B25").value).toMatchObject({ formula: "B20*B23/MAX(1,B23+B24)" });
