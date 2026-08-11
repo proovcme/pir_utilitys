@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import type { ProjectInput, SbcComplexRole, SbcResult } from "../domain/types";
+import type { PirEstimatePassport } from "../domain/pirForms";
 
 const rub = '#,##0" ₽"';
 const percent = "0.0%";
@@ -25,21 +26,39 @@ function widths(sheet: ExcelJS.Worksheet, values: number[]) {
   values.forEach((value, index) => { sheet.getColumn(index + 1).width = value; });
 }
 
-export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcResult): Promise<Uint8Array> {
+export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcResult, passport?: PirEstimatePassport): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "OVC.me";
   workbook.created = new Date();
   workbook.calcProperties.fullCalcOnLoad = true;
 
   const isComplex = Boolean(result.complexBreakdown);
-  const calculation = workbook.addWorksheet("Расчёт", { views: [{ showGridLines: false }] });
-  calculation.getCell("A1").value = isComplex
+  const calculationName = passport ? "Форма 2П" : "Расчёт";
+  const calculation = workbook.addWorksheet(calculationName, { views: [{ showGridLines: false }] });
+  calculation.getCell("A1").value = passport
+    ? `Смета № ${passport.estimate2pNumber || "—"} на проектные работы (форма 2П)`
+    : isComplex
     ? "Нормативный расчёт стоимости комплекса объектов"
     : "Нормативный расчёт стоимости проектных работ";
   calculation.getCell("A1").font = { bold: true, size: 16, color: { argb: "FF172033" } };
   calculation.mergeCells("A1:C1");
-  calculation.getCell("A2").value = "По данным ФГИС ЦС. Это не локальная или объектная смета строительства и не калькуляция команды по зарплатным ставкам.";
+  calculation.getCell("A2").value = passport?.constructionName
+    ? `Стройка: ${passport.constructionName}. Расчёт по данным ФГИС ЦС.`
+    : "По данным ФГИС ЦС. Это не локальная или объектная смета строительства и не калькуляция команды по зарплатным ставкам.";
   calculation.mergeCells("A2:C2");
+  if (passport) {
+    calculation.getCell("E1").value = "Заказчик";
+    calculation.getCell("F1").value = passport.customer;
+    calculation.getCell("E2").value = "Проектная организация";
+    calculation.getCell("F2").value = passport.designOrganization;
+    calculation.getCell("E3").value = "Генеральный проектировщик";
+    calculation.getCell("F3").value = passport.generalDesigner;
+    calculation.getCell("E4").value = "Уровень цен";
+    calculation.getCell("F4").value = passport.priceLevelYear;
+    calculation.getColumn("E").width = 26;
+    calculation.getColumn("F").width = 40;
+    ["E1", "E2", "E3", "E4"].forEach((address) => { calculation.getCell(address).font = { bold: true, color: { argb: "FF7F1D1D" } }; });
+  }
   calculation.getRow(4).values = ["Показатель", "Значение", "Как используется"];
   header(calculation.getRow(4));
 
@@ -215,9 +234,9 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
         section.code,
         section.name,
         section.pdSharePercent / 100,
-        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.pdPriceWithoutVat : formula(`'Расчёт'!$B$21*C${row}`, section.pdPriceWithoutVat),
+        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.pdPriceWithoutVat : formula(`'${calculationName}'!$B$21*C${row}`, section.pdPriceWithoutVat),
         section.rdSharePercent / 100,
-        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.rdPriceWithoutVat : formula(`'Расчёт'!$B$23*E${row}`, section.rdPriceWithoutVat),
+        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.rdPriceWithoutVat : formula(`'${calculationName}'!$B$23*E${row}`, section.rdPriceWithoutVat),
         formula(`D${row}+F${row}`, section.totalPriceWithoutVat),
       ];
     });
@@ -265,11 +284,11 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
   return data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data);
 }
 
-export async function downloadPublicPirWorkbook(project: ProjectInput, result: SbcResult) {
-  const bytes = await buildPublicPirWorkbook(project, result);
+export async function downloadPublicPirWorkbook(project: ProjectInput, result: SbcResult, passport?: PirEstimatePassport) {
+  const bytes = await buildPublicPirWorkbook(project, result, passport);
   const blobData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   saveAs(
     new Blob([blobData as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `Расчёт_стоимости_проектных_работ_${new Date().toISOString().slice(0, 10)}.xlsx`,
+    `${passport ? "Форма_2П" : "Расчёт_стоимости_проектных_работ"}_${new Date().toISOString().slice(0, 10)}.xlsx`,
   );
 }
