@@ -16,6 +16,7 @@ import {
   Upload,
 } from "lucide-react";
 import { PrikinatorStandalone } from "./components/PrikinatorStandalone";
+import { FgisPirCalculator } from "./components/FgisPirCalculator";
 import { seedCatalog } from "./data/seedCatalog";
 import {
   calculateEstimate,
@@ -576,6 +577,10 @@ export function App() {
 
   function updateProject<K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) {
     setProject((current) => ({ ...current, [key]: value }));
+  }
+
+  function patchProject(patch: Partial<ProjectInput>) {
+    setProject((current) => ({ ...current, ...patch }));
   }
 
   function updateStageDuration(stage: string, value: number) {
@@ -1206,7 +1211,7 @@ export function App() {
             <FileSpreadsheet size={18} /> Ставки
           </button>
           <button className={view === "sbc" ? "active" : ""} onClick={() => setView("sbc")}>
-            <Calculator size={18} /> СБЦ
+            <Calculator size={18} /> ФГИС ПИР
           </button>
           <button className={view === "prikinator" ? "active" : ""} onClick={() => setView("prikinator")}>
             <Calculator size={18} /> Прикинатор
@@ -1241,7 +1246,7 @@ export function App() {
               {view === "estimate" && "Расчет состава работ"}
               {view === "configuration" && "Конфигурация разделов"}
               {view === "rates" && "Ставки и справочники"}
-              {view === "sbc" && "Расчет по СБЦ"}
+              {view === "sbc" && "Калькулятор ПИР по ФГИС ЦС"}
               {view === "prikinator" && "Прикинатор НЦС"}
               {view === "templates" && "Шаблоны"}
               {view === "history" && "История расчетов"}
@@ -1915,56 +1920,15 @@ export function App() {
         ) : null}
 
         {view === "sbc" ? (
-          <section className="panel full">
-            <div className="panel-heading">
-              <h2>Методика СБЦ</h2>
-              <button className="primary" onClick={() => {
-                compareWithSbc();
-                setView("summary");
-              }}>
-                <Calculator size={18} /> Авторасчет и сравнение
-              </button>
-            </div>
-            <div className="method-note">
-              СБЦ обычно считает базовую цену проектирования по натуральному показателю <b>a + b x X</b> или процентом от стоимости строительства. Затем цена переводится в текущий уровень индексом и корректируется коэффициентами условий проектирования. Здесь все параметры редактируемые, потому что конкретные значения берутся из выбранного сборника и таблицы.
-            </div>
-            <div className="form-grid">
-              <TextField label="Сборник / таблица" value={project.sbcCollectionName} onChange={(value) => updateProject("sbcCollectionName", value)} />
-              <TextField label="Базисный уровень цен" value={project.sbcBaseYear} onChange={(value) => updateProject("sbcBaseYear", value)} />
-              <label className="field">
-                <span>Метод расчета</span>
-                <select value={project.sbcMethod} onChange={(event) => updateProject("sbcMethod", event.target.value as ProjectInput["sbcMethod"])}>
-                  <option value="natural">Натуральный показатель: a + b x X</option>
-                  <option value="constructionPercent">% от стоимости строительства</option>
-                </select>
-              </label>
-              <NumberField label="Индекс к текущему уровню" value={project.sbcIndexToCurrent} min={0} step={0.01} onChange={(value) => updateProject("sbcIndexToCurrent", value)} />
-            </div>
-            <div className="subsection-title">Базовая цена</div>
-            <div className="form-grid">
-              <NumberField label="Натуральный показатель X" value={project.sbcNaturalIndicator} min={0} step={1} onChange={(value) => updateProject("sbcNaturalIndicator", value)} suffix="ед." />
-              <NumberField label="Постоянная a" value={project.sbcConstantA} min={0} step={1000} onChange={(value) => updateProject("sbcConstantA", value)} suffix="₽" />
-              <NumberField label="Показатель b" value={project.sbcConstantB} min={0} step={1} onChange={(value) => updateProject("sbcConstantB", value)} suffix="₽/ед." />
-              <NumberField label="Стоимость строительства" value={project.sbcConstructionCost} min={0} step={1000000} onChange={(value) => updateProject("sbcConstructionCost", value)} suffix="₽" />
-              <NumberField label="% проектирования" value={project.sbcDesignPercent} min={0} step={0.001} onChange={(value) => updateProject("sbcDesignPercent", value)} suffix={formatPercent(project.sbcDesignPercent)} />
-            </div>
-            <div className="subsection-title">Коэффициенты и стадии</div>
-            <div className="form-grid">
-              <NumberField label="Категория сложности / условия" value={project.sbcComplexityCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcComplexityCoefficient", value)} />
-              <NumberField label="Дополнительный коэффициент" value={project.sbcAdjustmentCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcAdjustmentCoefficient", value)} />
-              <NumberField label="Доля ПД" value={project.sbcPdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcPdShare", value)} suffix={formatPercent(project.sbcPdShare)} />
-              <NumberField label="Доля РД" value={project.sbcRdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcRdShare", value)} suffix={formatPercent(project.sbcRdShare)} />
-              <NumberField label="Базовый норматив срока" value={project.sbcBaseDurationDays} min={0} step={1} onChange={(value) => updateProject("sbcBaseDurationDays", value)} suffix="дн." />
-              <NumberField label="Коэффициент срока" value={project.sbcDurationCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcDurationCoefficient", value)} />
-            </div>
-            <section className="stats-grid sbc-stats">
-              <StatCard label="Базовая цена" value={currency.format(result.sbc.basePrice)} />
-              <StatCard label="С коэффициентами" value={currency.format(result.sbc.adjustedBasePrice)} />
-              <StatCard label="Текущая без НДС" value={currency.format(result.sbc.currentPriceWithoutVat)} tone="accent" />
-              <StatCard label="Текущая с НДС" value={currency.format(result.sbc.currentPriceWithVat)} />
-              <StatCard label="Норматив срока" value={`${result.sbc.normativeDurationDays} дн.`} />
-            </section>
-          </section>
+          <FgisPirCalculator
+            project={project}
+            result={result.sbc}
+            onChange={patchProject}
+            onCompare={() => {
+              compareWithSbc();
+              setView("summary");
+            }}
+          />
         ) : null}
 
         {view === "prikinator" ? <PrikinatorStandalone /> : null}

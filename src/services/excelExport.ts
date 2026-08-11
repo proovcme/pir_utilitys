@@ -10,6 +10,7 @@ import {
   rateDisciplineDefinitions,
   resolveCostGroup,
 } from "../domain/calculation";
+import { explainFgisIndicator } from "../domain/fgisPir";
 
 const rub = '#,##0" ₽"';
 const percent = "0%";
@@ -85,6 +86,12 @@ export async function exportEstimateWorkbook(
   });
   const refs = workbook.addWorksheet("Справочники", {
     views: [{ showGridLines: false, state: "frozen", ySplit: 1 }],
+  });
+  const sbc = workbook.addWorksheet("СБЦ ФГИС", {
+    views: [{ showGridLines: false }],
+  });
+  const sbcBreakdown = workbook.addWorksheet("Разделы ФГИС", {
+    views: [{ showGridLines: false, state: "frozen", ySplit: 4 }],
   });
 
   summary.getCell("A1").value = "Итоговая сводка";
@@ -503,6 +510,140 @@ export async function exportEstimateWorkbook(
   });
   setColumns(refs, [14, 42, 18, 20, 18, 18]);
   refs.getColumn(3).numFmt = rub;
+
+  sbc.getCell("A1").value = "Нормативный расчет ПИР по ФГИС ЦС";
+  styleTitle(sbc.getCell("A1"));
+  sbc.mergeCells("A1:B1");
+  sbc.getRow(3).values = ["Параметр", "Значение", "Расшифровка / методика"];
+  styleHeader(sbc.getRow(3));
+  const indicatorExplanation = explainFgisIndicator(
+    snapshot.project.sbcFgisIndicatorUnit ?? "ед.",
+    snapshot.project.sbcFgisObjectName ?? "",
+  );
+  const sbcRows: Array<[string, ExcelJS.CellValue, string]> = [
+    ["Вид работ", snapshot.project.sbcFgisKind === "survey" ? "Инженерные изыскания" : "Проектные работы", "Определяет применимую группу нормативов и метод расчёта."],
+    ["Период индекса", snapshot.project.sbcFgisPeriodLabel, "Квартал, к которому приводится базовая цена."],
+    ["Норматив", snapshot.project.sbcCollectionName, "Официальный документ ФГИС ЦС, по которому выбран объект и таблица."],
+    ["Утверждение", snapshot.project.sbcFgisApprovingAct, "Приказ или иной акт, которым утверждён норматив."],
+    ["Уровень цен", snapshot.project.sbcBaseYear, "Дата базового уровня цен параметров a и b."],
+    ["Индекс ФГИС", snapshot.project.sbcIndexToCurrent, "Множитель перевода базовой цены в выбранный текущий квартал."],
+    ["Метод", snapshot.project.sbcMethod === "natural" ? "a + b × X" : "% от стоимости строительства", "Натуральный метод использует физический объём X; процентный — стоимость строительства и нормативную долю."],
+    ["Постоянная a", snapshot.project.sbcConstantA, "Фиксированная часть базовой цены из строки нормативной таблицы, ₽."],
+    ["Показатель b", snapshot.project.sbcConstantB, `Цена одной единицы X в базовом уровне цен, ₽/${snapshot.project.sbcFgisIndicatorUnit || "ед."}.`],
+    ["Натуральный показатель X", snapshot.project.sbcNaturalIndicator, `${indicatorExplanation.label}. ${indicatorExplanation.description}`],
+    ["Стоимость строительства", snapshot.project.sbcConstructionCost, "База для процентного метода в уровне цен, предусмотренном нормативом."],
+    ["Норматив проектирования", snapshot.project.sbcDesignPercent, "Доля стоимости проектирования для процентного метода: 0,04 = 4%."],
+    ["Коэффициент условий Kусл", snapshot.project.sbcComplexityCoefficient, "Множитель усложняющих условий проектирования с нормативным основанием."],
+    ["Дополнительный коэффициент Kдоп", snapshot.project.sbcAdjustmentCoefficient, "Дополнительный нормативный множитель; 1,00 не изменяет цену."],
+    [
+      "Базовая цена",
+      formula(
+        snapshot.project.sbcMethod === "natural" ? "B11+B12*B13" : "B14*B15",
+        snapshot.result.sbc.basePrice,
+      ),
+      "Шаг 1: Cбаз = a + b × X либо Cстр × p.",
+    ],
+    ["С коэффициентами", formula("B18*B16*B17", snapshot.result.sbc.adjustedBasePrice), "Шаг 2: Cусл = Cбаз × Kусл × Kдоп."],
+    ["Текущая стоимость без НДС", formula("B19*B9", snapshot.result.sbc.currentPriceWithoutVat), "Шаг 3: Cтек = Cусл × индекс ФГИС."],
+    ["НДС", snapshot.project.vatRate, "Ставка НДС: 0,22 = 22%."],
+    ["Текущая стоимость с НДС", formula("B20*(1+B21)", snapshot.result.sbc.currentPriceWithVat), "Шаг 4: Cндс = Cтек × (1 + ставка НДС)."],
+    ["Доля ПД", snapshot.project.sbcPdShare, "Часть текущей цены, относимая к проектной документации."],
+    ["Доля РД", snapshot.project.sbcRdShare, "Часть текущей цены, относимая к рабочей документации."],
+    ["ПД без НДС", formula("B20*B23/MAX(1,B23+B24)", snapshot.result.sbc.pdPriceWithoutVat), "Текущая цена без НДС × эффективная доля ПД. При сумме долей выше 100% они нормализуются пропорционально."],
+    ["РД без НДС", formula("B20*B24/MAX(1,B23+B24)", snapshot.result.sbc.rdPriceWithoutVat), "Текущая цена без НДС × эффективная доля РД. При сумме долей выше 100% они нормализуются пропорционально."],
+    ["Источник", snapshot.project.sbcFgisSourceUrl, "Прямая ссылка на официальный документ ФГИС ЦС."],
+    ["SHA-256 снимка каталога", snapshot.project.sbcFgisCatalogSha256, "Контрольная сумма версии локального каталога для воспроизводимости."],
+    ["Таблица ФГИС", snapshot.project.sbcFgisTableCode ?? "", "Код таблицы, из которой выбрана нормативная строка."],
+    ["Наименование таблицы", snapshot.project.sbcFgisTableTitle ?? "", "Раздел нормативного документа с выбранным типом объекта."],
+    ["Объект проектирования", snapshot.project.sbcFgisObjectName ?? "", "Тип объекта, к которому относится выбранная строка."],
+    ["Единица натурального показателя", snapshot.project.sbcFgisIndicatorUnit ?? "", `Единица измерения показателя «${indicatorExplanation.label}».`],
+    ["Диапазон строки", snapshot.project.sbcFgisIndicatorRange ?? "", "Интервал X, в котором действуют выбранные параметры a и b."],
+    ["Страница PDF", snapshot.project.sbcFgisTablePage ?? "", "Страница официального PDF для ручной проверки исходных данных."],
+  ];
+  sbc.addRows(sbcRows);
+  setColumns(sbc, [34, 44, 78]);
+  [9, 11, 12, 14, 18, 19, 20, 22, 25, 26].forEach((row) => {
+    sbc.getCell(`B${row}`).numFmt = rub;
+  });
+  [15, 21, 23, 24].forEach((row) => {
+    sbc.getCell(`B${row}`).numFmt = percent;
+  });
+  sbc.getCell("B9").numFmt = "0.00";
+  sbc.getCell("B27").value = {
+    text: snapshot.project.sbcFgisSourceUrl,
+    hyperlink: snapshot.project.sbcFgisSourceUrl,
+  };
+
+  const officialBreakdown = snapshot.result.sbc.officialBreakdown;
+  sbcBreakdown.getCell("A1").value = "Нормативная стоимость ПД и РД по разделам";
+  styleTitle(sbcBreakdown.getCell("A1"));
+  sbcBreakdown.mergeCells("A1:G1");
+  sbcBreakdown.getCell("A2").value = officialBreakdown
+    ? `Таблица ${officialBreakdown.tableCode}, стр. ${officialBreakdown.page}: ${officialBreakdown.objectName}`
+    : "Для выбранного норматива официальное распределение по разделам отсутствует";
+  sbcBreakdown.mergeCells("A2:G2");
+  sbcBreakdown.getCell("A3").value = "Это нормативный расчёт стоимости проектных работ, а не смета материалов и СМР и не калькуляция команды по зарплатным ставкам. Контакты: OVC.me";
+  sbcBreakdown.mergeCells("A3:G3");
+  sbcBreakdown.getRow(4).values = [
+    "Раздел",
+    "Наименование",
+    "Доля ПД",
+    "ПД без НДС",
+    "Доля РД",
+    "РД без НДС",
+    "Всего без НДС",
+  ];
+  styleHeader(sbcBreakdown.getRow(4));
+
+  if (officialBreakdown) {
+    officialBreakdown.sections.forEach((section, index) => {
+      const rowNumber = index + 5;
+      sbcBreakdown.getRow(rowNumber).values = [
+        section.code,
+        section.name,
+        section.pdSharePercent / 100,
+        formula(`'СБЦ ФГИС'!$B$25*C${rowNumber}`, section.pdPriceWithoutVat),
+        section.rdSharePercent / 100,
+        formula(`'СБЦ ФГИС'!$B$26*E${rowNumber}`, section.rdPriceWithoutVat),
+        formula(`D${rowNumber}+F${rowNumber}`, section.totalPriceWithoutVat),
+      ];
+    });
+
+    let nextRow = officialBreakdown.sections.length + 5;
+    if (officialBreakdown.pdUnallocatedWithoutVat || officialBreakdown.rdUnallocatedWithoutVat) {
+      sbcBreakdown.getRow(nextRow).values = [
+        "Остаток",
+        "Не распределён опубликованной строкой ФГИС",
+        Math.max(0, 100 - officialBreakdown.pdPublishedTotalPercent) / 100,
+        officialBreakdown.pdUnallocatedWithoutVat,
+        Math.max(0, 100 - officialBreakdown.rdPublishedTotalPercent) / 100,
+        officialBreakdown.rdUnallocatedWithoutVat,
+        formula(`D${nextRow}+F${nextRow}`, officialBreakdown.pdUnallocatedWithoutVat + officialBreakdown.rdUnallocatedWithoutVat),
+      ];
+      sbcBreakdown.getRow(nextRow).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFAE8" } };
+      nextRow += 1;
+    }
+
+    const firstSectionRow = 5;
+    const lastDetailRow = nextRow - 1;
+    sbcBreakdown.getRow(nextRow).values = [
+      "ИТОГО",
+      "ПД + РД",
+      officialBreakdown.pdSharePercent / 100,
+      formula(`SUM(D${firstSectionRow}:D${lastDetailRow})`, snapshot.result.sbc.pdPriceWithoutVat),
+      officialBreakdown.rdSharePercent / 100,
+      formula(`SUM(F${firstSectionRow}:F${lastDetailRow})`, snapshot.result.sbc.rdPriceWithoutVat),
+      formula(`D${nextRow}+F${nextRow}`, snapshot.result.sbc.currentPriceWithoutVat),
+    ];
+    sbcBreakdown.getRow(nextRow).font = { bold: true, color: { argb: "FF172033" } };
+    sbcBreakdown.getRow(nextRow).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F4F8" } };
+    for (let row = 5; row <= nextRow; row += 1) {
+      sbcBreakdown.getCell(`C${row}`).numFmt = "0.0%";
+      sbcBreakdown.getCell(`E${row}`).numFmt = "0.0%";
+      ["D", "F", "G"].forEach((column) => { sbcBreakdown.getCell(`${column}${row}`).numFmt = rub; });
+    }
+  }
+  setColumns(sbcBreakdown, [14, 58, 14, 22, 14, 22, 24]);
 
   workbook.eachSheet((sheet) => {
     sheet.eachRow((row) => {

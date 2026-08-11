@@ -10,6 +10,12 @@ import type {
   RateGroup,
   SbcResult,
 } from "./types";
+import {
+  fgisPirBreakdownCatalog,
+  getFgisBreakdownDocument,
+  getFgisBreakdownTable,
+  recommendFgisBreakdownObject,
+} from "./fgisPir";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -227,8 +233,13 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
   const adjustedBasePrice = basePrice * (project.sbcComplexityCoefficient ?? 1) * (project.sbcAdjustmentCoefficient ?? 1);
   const currentPriceWithoutVat = adjustedBasePrice * (project.sbcIndexToCurrent ?? 1);
   const currentPriceWithVat = currentPriceWithoutVat * (1 + (project.vatRate ?? 0));
-  const pdShare = Math.max(0, project.sbcPdShare ?? 0);
-  const rdShare = Math.max(0, project.sbcRdShare ?? 0);
+  const breakdownDocument = getFgisBreakdownDocument(project.sbcFgisNormGuid);
+  const pdShare = breakdownDocument
+    ? breakdownDocument.stageShares.pd / 100
+    : Math.max(0, project.sbcPdShare ?? 0);
+  const rdShare = breakdownDocument
+    ? breakdownDocument.stageShares.rd / 100
+    : Math.max(0, project.sbcRdShare ?? 0);
   const normalizedStageShare = pdShare + rdShare > 1 ? pdShare + rdShare : 1;
   const pdPriceWithoutVat = currentPriceWithoutVat * (pdShare / normalizedStageShare);
   const rdPriceWithoutVat = currentPriceWithoutVat * (rdShare / normalizedStageShare);
@@ -238,11 +249,64 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
   const differenceWithVat = totals.totalWithVat - currentPriceWithVat;
   const notes = [
     method === "natural"
-      ? "Цена СБЦ рассчитана по натуральному показателю: a + b x X."
-      : "Цена СБЦ рассчитана процентом от стоимости строительства.",
-    "Параметры a, b, процент, индекс и коэффициенты должны уточняться по выбранному сборнику/таблице СБЦ.",
-    "Норматив срока задан отдельным параметром и корректируется коэффициентом условий проектирования.",
+      ? "Базовая цена рассчитана по натуральному показателю: Cбаз = a + b × X."
+      : "Базовая цена рассчитана процентом от стоимости строительства: Cбаз = Cстр × p.",
+    `Условия проектирования: Cусл = Cбаз × Kусл × Kдоп = ${roundMoney(adjustedBasePrice)} ₽.`,
+    `Текущий уровень цен: Cтек = Cусл × I = ${roundMoney(currentPriceWithoutVat)} ₽ без НДС.`,
+    pdShare + rdShare > 1
+      ? "Сумма долей ПД и РД больше 100%; доли нормализованы пропорционально."
+      : "Не распределённый между ПД и РД остаток отражается как прочие работы.",
+    `Нормативный срок: T = Tбаз × Kсрок = ${roundMoney(normativeDurationDays)} дн.`,
   ];
+
+  const breakdownTable = breakdownDocument
+    ? (
+        project.sbcFgisTableCode === "3.18"
+          ? breakdownDocument.tables.find((table) => table.code === project.sbcFgisBreakdownTableCode)
+          : getFgisBreakdownTable(breakdownDocument, project.sbcFgisTableCode)
+      )
+    : undefined;
+  const breakdownObject = breakdownTable
+    ? (
+        breakdownTable.objects.find((item) => item.id === project.sbcFgisBreakdownObjectId) ??
+        recommendFgisBreakdownObject(breakdownTable, project.sbcFgisObjectName ?? "")
+      )
+    : undefined;
+  const officialBreakdown = breakdownDocument && breakdownTable && breakdownObject
+    ? {
+        tableCode: breakdownTable.code,
+        objectId: breakdownObject.id,
+        objectName: breakdownObject.name,
+        page: breakdownObject.page,
+        stageSourcePage: breakdownDocument.stageSourcePage,
+        pdSharePercent: breakdownDocument.stageShares.pd,
+        rdSharePercent: breakdownDocument.stageShares.rd,
+        pdPublishedTotalPercent: breakdownObject.totals.pd,
+        rdPublishedTotalPercent: breakdownObject.totals.rd,
+        sections: fgisPirBreakdownCatalog.sections.map((section) => {
+          const pdSectionShare = breakdownObject.stages.pd[section.code] ?? 0;
+          const rdSectionShare = breakdownObject.stages.rd[section.code] ?? 0;
+          const pdSectionPrice = pdPriceWithoutVat * pdSectionShare / 100;
+          const rdSectionPrice = rdPriceWithoutVat * rdSectionShare / 100;
+          return {
+            code: section.code,
+            name: section.name,
+            pdSharePercent: pdSectionShare,
+            rdSharePercent: rdSectionShare,
+            combinedSharePercent: breakdownObject.stages.combined[section.code] ?? 0,
+            pdPriceWithoutVat: roundMoney(pdSectionPrice),
+            rdPriceWithoutVat: roundMoney(rdSectionPrice),
+            totalPriceWithoutVat: roundMoney(pdSectionPrice + rdSectionPrice),
+          };
+        }),
+        pdUnallocatedWithoutVat: roundMoney(
+          pdPriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.pd) / 100,
+        ),
+        rdUnallocatedWithoutVat: roundMoney(
+          rdPriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.rd) / 100,
+        ),
+      }
+    : undefined;
 
   return {
     method,
@@ -260,6 +324,7 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
     differenceWithVat: roundMoney(differenceWithVat),
     ratioToSbc: roundMoney(currentPriceWithoutVat > 0 ? totals.totalWithoutVat / currentPriceWithoutVat - 1 : 0),
     notes,
+    officialBreakdown,
   };
 }
 

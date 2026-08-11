@@ -1,5 +1,6 @@
 export type CalculationType = "ФОТ" | "Ручной" | "Подряд" | "% от общего" | "Заголовок" | string;
 export type SbcCalculationMethod = "natural" | "constructionPercent";
+export type FgisPirKind = "design" | "survey";
 
 export interface ProjectInput {
   projectType?: string;
@@ -29,6 +30,21 @@ export interface ProjectInput {
   sbcRdShare: number;
   sbcBaseDurationDays: number;
   sbcDurationCoefficient: number;
+  sbcFgisKind: FgisPirKind;
+  sbcFgisNormGuid: string;
+  sbcFgisPeriodId: number;
+  sbcFgisPeriodLabel: string;
+  sbcFgisApprovingAct: string;
+  sbcFgisSourceUrl: string;
+  sbcFgisCatalogSha256: string;
+  sbcFgisTableCode?: string;
+  sbcFgisTableTitle?: string;
+  sbcFgisObjectName?: string;
+  sbcFgisIndicatorUnit?: string;
+  sbcFgisIndicatorRange?: string;
+  sbcFgisTablePage?: number;
+  sbcFgisBreakdownTableCode?: string;
+  sbcFgisBreakdownObjectId?: string;
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -198,6 +214,29 @@ export interface SbcResult {
   differenceWithVat: number;
   ratioToSbc: number;
   notes: string[];
+  officialBreakdown?: {
+    tableCode: string;
+    objectId: string;
+    objectName: string;
+    page: number;
+    stageSourcePage: number;
+    pdSharePercent: number;
+    rdSharePercent: number;
+    pdPublishedTotalPercent: number;
+    rdPublishedTotalPercent: number;
+    sections: Array<{
+      code: string;
+      name: string;
+      pdSharePercent: number;
+      rdSharePercent: number;
+      combinedSharePercent: number;
+      pdPriceWithoutVat: number;
+      rdPriceWithoutVat: number;
+      totalPriceWithoutVat: number;
+    }>;
+    pdUnallocatedWithoutVat: number;
+    rdUnallocatedWithoutVat: number;
+  };
 }
 
 export interface EstimateResult {

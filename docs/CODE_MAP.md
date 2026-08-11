@@ -7,10 +7,16 @@
 ├── src/
 │   ├── App.tsx
 │   ├── main.tsx
+│   ├── components/
+│   │   ├── FgisPirCalculator.tsx
+│   │   └── PrikinatorStandalone.tsx
 │   ├── data/
-│   │   └── seedCatalog.ts
+│   │   ├── seedCatalog.ts
+│   │   ├── fgisPirSnapshot.json
+│   │   └── fgisPirManifest.json
 │   ├── domain/
 │   │   ├── calculation.ts
+│   │   ├── fgisPir.ts
 │   │   └── types.ts
 │   ├── services/
 │   │   ├── excelExport.ts
@@ -21,9 +27,11 @@
 ├── tests/
 │   ├── calculation.test.ts
 │   ├── excelExport.test.ts
+│   ├── fgisPir.test.ts
 │   └── setup.ts
 ├── scripts/
-│   └── extract_seed.py
+│   ├── extract_seed.py
+│   └── sync_fgis_pir.py
 └── src-tauri/
     ├── src/
     │   ├── lib.rs
@@ -107,6 +115,14 @@
 - Ручной тип считается только ручной суммой.
 - `% от общего` считается после базовых строк.
 
+### `src/domain/fgisPir.ts`
+
+Типизированный доступ к офлайн-снимку ПИР ФГИС ЦС. Отвечает за выбор периода, списка нормативов, категорий и формирование прозрачного патча проекта с официальным индексом и паспортом источника.
+
+### `src/components/FgisPirCalculator.tsx`
+
+Мастер нормативного расчета: вид работ, категория, документ, период, параметры таблицы, коэффициенты и проверяемая цепочка результата. Профессиональные значения таблицы не угадываются кодом.
+
 ### `src/data/seedCatalog.ts`
 
 Версионированный исходный каталог, извлеченный из Excel.
@@ -133,6 +149,7 @@
 - `Конструктор`.
 - `Справочники`.
 - `Пульт`.
+- `СБЦ ФГИС`.
 
 Ключевые правила:
 

@@ -5,6 +5,7 @@
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -308,6 +309,994 @@ main {
   border-color: #efc7c7;
 }
 
+.fgis-calculator {
+  min-height: calc(100vh - 120px);
+  overflow: hidden;
+  border: 1px solid var(--border, #d8e1ed);
+  border-radius: 12px;
+  background: var(--panel, #fff);
+}
+
+.fgis-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e6ebf2;
+  background: #fff;
+}
+
+.fgis-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: #8f2330;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.fgis-intro h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.fgis-intro p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.fgis-purpose {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  margin: 18px 24px 0;
+  padding: 16px;
+  border-radius: 10px;
+  color: #452b32;
+  background: #fff8f7;
+  box-shadow: 0 0 0 1px rgba(143, 35, 48, 0.14), 0 2px 8px rgba(65, 25, 31, 0.04);
+}
+
+.fgis-purpose > svg { margin-top: 1px; color: #8f2330; }
+.fgis-purpose h3 { margin: 0; font-size: 16px; letter-spacing: -0.01em; text-wrap: balance; }
+.fgis-purpose p { max-width: 920px; margin: 5px 0 0; color: #694d55; font-size: 13px; line-height: 1.5; text-wrap: pretty; }
+
+.fgis-purpose-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.fgis-purpose-grid span { color: #634b52; font-size: 12px; line-height: 1.45; }
+.fgis-purpose-grid b { display: block; margin-bottom: 2px; color: #452b32; }
+
+.fgis-user-guide {
+  margin: 12px 24px 0;
+  border-radius: 9px;
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(99, 115, 129, 0.17);
+}
+
+.fgis-user-guide summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 11px 14px;
+  color: #344054;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.fgis-user-guide summary small { color: #8f2330; font-size: 11px; }
+.fgis-user-guide ol {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0 14px 14px;
+  counter-reset: fgis-guide;
+  list-style: none;
+}
+
+.fgis-user-guide li {
+  position: relative;
+  padding: 29px 10px 10px;
+  border-radius: 7px;
+  color: #667085;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(99, 115, 129, 0.12);
+  font-size: 11px;
+  line-height: 1.45;
+  counter-increment: fgis-guide;
+}
+
+.fgis-user-guide li::before {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  color: #8f2330;
+  content: "0" counter(fgis-guide);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.fgis-user-guide li b { color: #344054; }
+
+.fgis-sync-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  padding: 9px 11px;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  color: #2f6a52;
+  background: #f7fbf9;
+}
+
+.fgis-sync-state div {
+  display: grid;
+  gap: 2px;
+}
+
+.fgis-sync-state strong,
+.fgis-sync-state span {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.fgis-sync-state span {
+  color: #667085;
+  font-weight: 650;
+}
+
+.fgis-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
+  min-height: calc(100vh - 218px);
+}
+
+.fgis-flow {
+  display: grid;
+  gap: 0;
+  padding: 8px 24px 28px;
+}
+
+.fgis-step {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  padding: 20px 0;
+  border-bottom: 1px solid #edf0f4;
+}
+
+.fgis-step-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e1b7bc;
+  border-radius: 50%;
+  color: #8f2330;
+  background: #fff7f7;
+  font-size: 11px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.fgis-step-content {
+  min-width: 0;
+}
+
+.fgis-step h3 {
+  margin: 4px 0 12px;
+  color: #172033;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.fgis-step-lead { margin: -5px 0 12px; color: #667085; font-size: 12px; line-height: 1.45; }
+
+.fgis-stage-ribbon {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fgis-stage-ribbon span {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(99, 115, 129, 0.16), 0 1px 2px rgba(25, 35, 50, 0.04);
+}
+
+.fgis-stage-ribbon b { color: #8f2330; font-size: 12px; }
+.fgis-stage-ribbon strong { justify-self: end; color: #172033; font-size: 17px; font-variant-numeric: tabular-nums; }
+.fgis-stage-ribbon small { grid-column: 1 / -1; color: #667085; font-size: 10px; }
+
+.fgis-source-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  color: #35634f;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fgis-source-note svg { flex: 0 0 auto; }
+
+.fgis-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fgis-segment button {
+  min-height: 62px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #d8e1ed;
+  color: #344054;
+  background: #fff;
+  text-align: left;
+  transition: border-color 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms cubic-bezier(0.23, 1, 0.32, 1), transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.fgis-segment button:hover {
+  border-color: #c8a1a6;
+  background: #fffafa;
+}
+
+.fgis-segment button:active {
+  transform: scale(0.96);
+}
+
+.fgis-segment button.active {
+  border-color: #a72525;
+  color: #7f1d1d;
+  background: #fff5f5;
+  box-shadow: inset 3px 0 0 #a72525;
+}
+
+.fgis-segment small {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.fgis-select-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.85fr) minmax(260px, 1.6fr) minmax(180px, 0.7fr);
+  gap: 10px;
+}
+
+.fgis-input-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.fgis-method-field {
+  display: block;
+  max-width: 520px;
+  margin-bottom: 10px;
+}
+
+.fgis-table-hint {
+  margin: 10px 0 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fgis-table-choice-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.4fr);
+  gap: 10px;
+}
+
+.fgis-indicator-workbench {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.fgis-applied-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #bad8ca;
+  border-radius: 7px;
+  background: #f5fbf8;
+}
+
+.fgis-applied-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #285f49;
+  font-size: 13px;
+}
+
+.fgis-applied-row dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.fgis-applied-row dl div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.fgis-applied-row dt,
+.fgis-applied-row dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fgis-applied-row dt {
+  color: #667085;
+  font-weight: 750;
+}
+
+.fgis-applied-row dd {
+  color: #264d3d;
+  font-weight: 800;
+}
+
+.fgis-method-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  color: #475467;
+  background: #f8fafc;
+}
+
+.fgis-method-state.warning {
+  border-color: #e7c98d;
+  color: #714d13;
+  background: #fffaf0;
+}
+
+.fgis-method-state.compact {
+  height: 100%;
+  margin: 0;
+}
+
+.fgis-method-state svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.fgis-method-state strong {
+  display: block;
+  margin-bottom: 3px;
+  color: inherit;
+  font-size: 13px;
+}
+
+.fgis-method-state p {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fgis-manual-values {
+  margin-top: 10px;
+  border: 0;
+}
+
+.fgis-manual-values summary {
+  color: #667085;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.fgis-manual-values .fgis-input-grid {
+  margin-top: 10px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.fgis-advanced {
+  margin: 16px 0 0 54px;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.fgis-advanced summary {
+  min-height: 42px;
+  padding: 11px 13px;
+  color: #475467;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fgis-advanced[open] summary {
+  border-bottom: 1px solid #dfe5ed;
+}
+
+.fgis-advanced .fgis-input-grid {
+  padding: 12px;
+}
+
+.fgis-passport {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 14px;
+  min-height: calc(100vh - 218px);
+  padding: 22px;
+  border-left: 1px solid #e1e6ed;
+  background: #f8fafc;
+}
+
+.fgis-result {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #dfe5ed;
+}
+
+.fgis-result span,
+.fgis-result small {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.fgis-result strong {
+  display: block;
+  margin: 5px 0;
+  color: #7f1d1d;
+  font-size: 29px;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fgis-result .fgis-result-pending {
+  max-width: 260px;
+  color: #714d13;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.fgis-formula {
+  display: grid;
+  gap: 7px;
+}
+
+.fgis-formula > span {
+  color: #667085;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fgis-formula code {
+  overflow: auto;
+  padding: 9px 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 7px;
+  color: #344054;
+  background: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fgis-calculation-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fgis-calculation-steps li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.fgis-calculation-steps li > i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #d8e1ed;
+  border-radius: 50%;
+  color: #7f1d1d;
+  background: #fff;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.fgis-calculation-steps li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fgis-calculation-steps strong,
+.fgis-calculation-steps small {
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fgis-calculation-steps small {
+  color: #667085;
+  font-weight: 750;
+}
+
+.fgis-calculation-steps code {
+  white-space: normal;
+}
+
+.fgis-methodology {
+  overflow: hidden;
+  border: 1px solid #d8e1ed;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.fgis-methodology summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
+  color: #344054;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.fgis-methodology summary small {
+  color: #8f2330;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.fgis-methodology .when-open {
+  display: none;
+}
+
+.fgis-methodology[open] .when-closed {
+  display: none;
+}
+
+.fgis-methodology[open] .when-open {
+  display: inline;
+}
+
+.fgis-methodology[open] summary {
+  border-bottom: 1px solid #dfe5ed;
+}
+
+.fgis-methodology-body {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fgis-methodology-body p,
+.fgis-methodology-body ol,
+.fgis-glossary {
+  margin: 0;
+}
+
+.fgis-methodology-body ol {
+  display: grid;
+  gap: 7px;
+  padding-left: 20px;
+}
+
+.fgis-methodology-warning {
+  padding: 8px 10px;
+  border-left: 3px solid #b7791f;
+  color: #714d13;
+  background: #fffaf0;
+}
+
+.fgis-glossary {
+  display: grid;
+  gap: 0;
+}
+
+.fgis-glossary div {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid #edf0f4;
+}
+
+.fgis-glossary dt,
+.fgis-glossary dd {
+  margin: 0;
+}
+
+.fgis-glossary dt {
+  color: #7f1d1d;
+  font-weight: 850;
+}
+
+.fgis-source-passport {
+  padding: 14px;
+  border: 1px solid #e1c4c7;
+  border-radius: 9px;
+  background: #fffafa;
+}
+
+.fgis-passport-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: #7f1d1d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.fgis-source-passport dl {
+  display: grid;
+  gap: 0;
+  margin: 0 0 12px;
+}
+
+.fgis-source-passport dl div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f0e5e6;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fgis-source-passport dt {
+  color: #7b6570;
+  font-weight: 700;
+}
+
+.fgis-source-passport dd {
+  margin: 0;
+  color: #34282d;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.fgis-source-passport a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8f2330;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.fgis-compare {
+  width: 100%;
+  min-height: 44px;
+}
+
+.fgis-digest {
+  margin: -6px 0 0;
+  color: #98a2b3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  text-align: center;
+}
+
+.fgis-output {
+  margin: 0 24px 24px;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(99, 115, 129, 0.16), 0 4px 18px rgba(25, 35, 50, 0.05);
+}
+
+.fgis-output-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 18px 20px 14px;
+}
+
+.fgis-output-heading .fgis-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.fgis-output-heading h3 { margin: 0; color: #172033; font-size: 21px; letter-spacing: -0.02em; text-wrap: balance; }
+.fgis-output-heading p { margin: 5px 0 0; color: #667085; font-size: 12px; line-height: 1.45; text-wrap: pretty; }
+
+.fgis-output-actions { display: flex; align-items: flex-end; gap: 14px; }
+.fgis-output-total { display: grid; flex: 0 0 auto; justify-items: end; gap: 2px; }
+.fgis-output-total span { color: #667085; font-size: 11px; font-weight: 750; }
+.fgis-output-total strong { color: #7f1d1d; font-size: 24px; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+.fgis-export { min-height: 42px; transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms cubic-bezier(0.23, 1, 0.32, 1); }
+.fgis-export:active { transform: scale(0.96); }
+
+.fgis-stage-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 20px 14px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e8edf3;
+  box-shadow: 0 0 0 1px rgba(99, 115, 129, 0.12);
+}
+
+.fgis-stage-totals div { display: grid; gap: 4px; padding: 12px 14px; background: #f8fafc; }
+.fgis-stage-totals span { color: #667085; font-size: 11px; font-weight: 700; }
+.fgis-stage-totals strong { color: #172033; font-size: 17px; font-variant-numeric: tabular-nums; }
+
+.fgis-breakdown-scroll { overflow-x: auto; border-top: 1px solid #e7ecf2; border-bottom: 1px solid #e7ecf2; }
+.fgis-breakdown-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.fgis-breakdown-table th,
+.fgis-breakdown-table td { padding: 9px 12px; border-right: 1px solid #edf0f4; border-bottom: 1px solid #edf0f4; text-align: right; white-space: nowrap; }
+.fgis-breakdown-table thead th { color: #475467; background: #f6f8fb; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
+.fgis-breakdown-table tbody th,
+.fgis-breakdown-table tfoot th { min-width: 270px; text-align: left; white-space: normal; }
+.fgis-breakdown-table tbody th b { display: inline-block; min-width: 40px; color: #8f2330; }
+.fgis-breakdown-table tbody th span { color: #344054; font-weight: 650; }
+.fgis-breakdown-table tbody tr:hover td,
+.fgis-breakdown-table tbody tr:hover th { background: #fffafa; }
+.fgis-breakdown-table tfoot th,
+.fgis-breakdown-table tfoot td { color: #172033; background: #f6f8fb; font-weight: 850; }
+.fgis-breakdown-table .fgis-unallocated th,
+.fgis-breakdown-table .fgis-unallocated td { color: #714d13; background: #fffaf0; }
+
+.fgis-output-note { margin: 0; padding: 12px 20px 14px; color: #667085; font-size: 11px; line-height: 1.45; }
+.fgis-contact { padding: 0 24px 24px; color: #667085; font-size: 12px; text-align: center; }
+.fgis-contact a { color: #8f2330; font-weight: 850; text-underline-offset: 3px; }
+
+.fgis-empty {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: #667085;
+}
+
+@media (max-width: 1220px) {
+  .fgis-workbench {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .fgis-select-grid,
+  .fgis-input-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .fgis-indicator-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .fgis-user-guide ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fgis-segment button {
+    transition: none;
+  }
+}
+
+.public-pir-shell {
+  min-height: 100vh;
+  background: #f5f7fb;
+}
+
+.public-pir-body {
+  min-width: 320px;
+}
+
+.public-pir-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 64px;
+  padding: 0 28px;
+  border-bottom: 1px solid #dfe5ed;
+  background: #fff;
+}
+
+.public-pir-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: #172033;
+  text-decoration: none;
+}
+
+.public-pir-brand strong {
+  color: #8f2330;
+  font-size: 18px;
+  letter-spacing: 0.05em;
+}
+
+.public-pir-brand span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.public-pir-header nav {
+  display: flex;
+  gap: 18px;
+}
+
+.public-pir-header nav a {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 750;
+  text-underline-offset: 3px;
+}
+
+.public-pir-main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 28px;
+}
+
+.public-pir-footer {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 28px 24px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1080px) {
+  .public-pir-main {
+    padding: 18px;
+  }
+
+  .public-pir-shell .fgis-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .public-pir-shell .fgis-passport {
+    position: static;
+    min-height: 0;
+    border-top: 1px solid #e1e6ed;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .public-pir-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 0;
+    padding: 16px;
+  }
+
+  .public-pir-brand {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .public-pir-header nav {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  .public-pir-main {
+    padding: 12px;
+  }
+
+  .public-pir-footer {
+    padding: 0 16px 20px;
+  }
+
+  .public-pir-shell .fgis-intro {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .public-pir-shell .fgis-purpose {
+    grid-template-columns: 1fr;
+    margin: 12px 16px 0;
+  }
+
+  .public-pir-shell .fgis-purpose-grid,
+  .public-pir-shell .fgis-user-guide ol,
+  .public-pir-shell .fgis-stage-ribbon,
+  .public-pir-shell .fgis-stage-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .public-pir-shell .fgis-user-guide { margin: 10px 16px 0; }
+  .public-pir-shell .fgis-user-guide summary { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .public-pir-shell .fgis-output { margin: 0 12px 18px; }
+  .public-pir-shell .fgis-output-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .public-pir-shell .fgis-output-actions { width: 100%; align-items: stretch; flex-direction: column; }
+  .public-pir-shell .fgis-output-total { justify-items: start; }
+  .public-pir-shell .fgis-export { width: 100%; }
+
+  .public-pir-shell .fgis-flow {
+    padding: 4px 16px 20px;
+  }
+
+  .public-pir-shell .fgis-step {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .public-pir-shell .fgis-segment,
+  .public-pir-shell .fgis-select-grid,
+  .public-pir-shell .fgis-input-grid,
+  .public-pir-shell .fgis-table-choice-grid,
+  .public-pir-shell .fgis-indicator-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .public-pir-shell .fgis-advanced {
+    margin-left: 0;
+  }
+
+  .public-pir-shell .fgis-passport {
+    padding: 18px;
+  }
+
+  .public-pir-shell .fgis-result strong {
+    font-size: 25px;
+  }
+}
+
 .method-note {
   margin: 0 0 16px;
   border: 1px solid #ead1d1;
@@ -400,6 +1389,14 @@ main {
 .input-affix b {
   min-width: 56px;
   color: #a72525;
+}
+
+.field-hint {
+  color: #7c8798;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
 }
 
 .toggle-grid {

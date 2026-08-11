@@ -3,17 +3,28 @@ import { describe, expect, it } from "vitest";
 import { seedCatalog } from "../src/data/seedCatalog";
 import { calculateEstimate, seedToCatalog } from "../src/domain/calculation";
 import { exportEstimateWorkbook } from "../src/services/excelExport";
+import { buildPublicPirWorkbook } from "../src/services/publicPirExcel";
 import type { CalculationSnapshot } from "../src/domain/types";
 
 describe("exportEstimateWorkbook", () => {
   it("creates a valid workbook with formulas", async () => {
     const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcPdShare: 0.4,
+      sbcRdShare: 0.6,
+    };
     const snapshot: CalculationSnapshot = {
       id: "test",
       name: "Тестовая оценка",
-      project: seedCatalog.projectInput,
+      project,
       catalog,
-      result: calculateEstimate(seedCatalog.projectInput, catalog),
+      result: calculateEstimate(project, catalog),
       createdAt: new Date("2026-07-07T00:00:00.000Z").toISOString(),
     };
 
@@ -29,11 +40,15 @@ describe("exportEstimateWorkbook", () => {
     expect(workbook.getWorksheet("Оценка")).toBeDefined();
     expect(workbook.getWorksheet("Конструктор")).toBeDefined();
     expect(workbook.getWorksheet("Справочники")).toBeDefined();
+    expect(workbook.getWorksheet("СБЦ ФГИС")).toBeDefined();
+    expect(workbook.getWorksheet("Разделы ФГИС")).toBeDefined();
 
     const control = workbook.getWorksheet("Пульт")!;
     const summary = workbook.getWorksheet("Итог")!;
     const estimate = workbook.getWorksheet("Оценка")!;
     const constructor = workbook.getWorksheet("Конструктор")!;
+    const sbc = workbook.getWorksheet("СБЦ ФГИС")!;
+    const sbcBreakdown = workbook.getWorksheet("Разделы ФГИС")!;
     expect(control.getCell("B23").value).toMatchObject({ formula: "B21+B22" });
     expect(control.getCell("B28").value).toMatchObject({ formula: expect.stringContaining("SUMPRODUCT") });
     expect(summary.getCell("B5").value).toMatchObject({ formula: "'Пульт'!B28" });
@@ -49,6 +64,18 @@ describe("exportEstimateWorkbook", () => {
     expect(constructor.getCell("W2").value).toMatchObject({ formula: expect.stringContaining("VLOOKUP") });
     expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("SUMIFS") });
     expect(constructor.getCell("AA2").value).toMatchObject({ formula: expect.stringContaining("Подряд") });
+    expect(sbc.getCell("B18").value).toMatchObject({ formula: "B11+B12*B13" });
+    expect(sbc.getCell("B20").value).toMatchObject({ formula: "B19*B9" });
+    expect(sbc.getCell("B22").value).toMatchObject({ formula: "B20*(1+B21)" });
+    expect(sbc.getCell("B25").value).toMatchObject({ formula: "B20*B23/MAX(1,B23+B24)" });
+    expect(sbc.getCell("B26").value).toMatchObject({ formula: "B20*B24/MAX(1,B23+B24)" });
+    expect(sbc.getCell("C3").value).toBe("Расшифровка / методика");
+    expect(String(sbc.getCell("C13").value)).toContain("Натуральный показатель X");
+    expect(String(sbc.getCell("C20").value)).toContain("индекс ФГИС");
+    expect(sbcBreakdown.getCell("A1").value).toBe("Нормативная стоимость ПД и РД по разделам");
+    expect(String(sbcBreakdown.getCell("A3").value)).toContain("OVC.me");
+    expect(sbcBreakdown.getCell("C5").value).toBe(0.005);
+    expect(sbcBreakdown.getCell("D5").value).toMatchObject({ formula: "'СБЦ ФГИС'!$B$25*C5" });
     const firstEstimateIndex = estimate.getCell("A9").value;
     const firstEstimateCost = estimate.getCell("N9").value;
     expect(firstEstimateIndex).toMatchObject({ formula: expect.stringMatching(/^'Конструктор'!\$AG\d+$/) });
@@ -78,5 +105,15 @@ describe("exportEstimateWorkbook", () => {
     expect(formulaCounts["Конструктор"]).toBeGreaterThan(snapshot.catalog.lines.length * 8);
     expect(formulaCounts["Пульт"]).toBeGreaterThan(10);
     expect(badFormulaTexts).toEqual([]);
+
+    const publicBytes = await buildPublicPirWorkbook(project, snapshot.result.sbc);
+    const publicWorkbook = new ExcelJS.Workbook();
+    await publicWorkbook.xlsx.load(Buffer.from(publicBytes));
+    const publicCalculation = publicWorkbook.getWorksheet("Расчёт")!;
+    const publicBreakdown = publicWorkbook.getWorksheet("Разделы")!;
+    expect(publicCalculation.getCell("A1").value).toBe("Нормативный расчёт стоимости проектных работ");
+    expect(publicCalculation.getCell("B19").value).toMatchObject({ formula: "B17*B18" });
+    expect(publicBreakdown.getCell("D5").value).toMatchObject({ formula: "'Расчёт'!$B$21*C5" });
+    expect(String(publicBreakdown.getCell("A3").value)).toContain("OVC.me");
   });
 });
