@@ -2504,3 +2504,13 @@ td {
   min-height: 32px;
   font-size: 12px;
 }
+
+/* The shared table header style is red; section names are body row labels. */
+.fgis-breakdown-table tbody th {
+  background: #fff;
+  color: #344054;
+}
+
+.fgis-breakdown-table tbody tr.fgis-unallocated th {
+  background: #fffaf0;
+}
