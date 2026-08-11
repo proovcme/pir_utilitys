@@ -13,7 +13,7 @@ const javascript = (
 const html = await readFile("dist-public/index.html", "utf8");
 
 const required = [
-  "ФГИС ЦС · ПИР",
+  "ФГИС ЦС · ПРОЕКТНЫЕ РАБОТЫ",
   "Скачать документ ФГИС",
   "2 квартал 2026 г.",
   "Методика расчёта и расшифровки",

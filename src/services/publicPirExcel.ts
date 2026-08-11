@@ -35,14 +35,29 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
 
   const structured = Boolean(result.officialBreakdown);
   const basePriceFormula = result.normativeTrace.ruleCode === "8.1"
-    ? "B9+B10*B11"
+    ? `B9+B10*B11+${result.normativeTrace.airConditioningAdditionalBasePrice}`
     : `ROUND(${result.basePrice},2)`;
   const firstConditionCoefficient = structured
     ? result.normativeTrace.normSpecificCoefficient
     : project.sbcComplexityCoefficient;
   const secondConditionCoefficient = structured
-    ? result.normativeTrace.specialStatusCoefficient * result.normativeTrace.smrShareCoefficient
+    ? result.normativeTrace.normTableCoefficient
+      * result.normativeTrace.complexRoleCoefficient
+      * result.normativeTrace.specialStatusCoefficient
+      * result.normativeTrace.smrShareCoefficient
     : project.sbcAdjustmentCoefficient;
+  const isBim = Boolean(project.sbcInformationModel);
+  const pdShare = result.officialBreakdown ? result.officialBreakdown.pdSharePercent / 100 : project.sbcPdShare;
+  const rdShare = result.officialBreakdown ? result.officialBreakdown.rdSharePercent / 100 : project.sbcRdShare;
+  const adjustedFormula = isBim
+    ? `B14*B15*B16*(B20*${result.normativeTrace.bimPdCoefficient}+B22*${result.normativeTrace.bimRdCoefficient})`
+    : "B14*B15*B16";
+  const pdFormula = isBim
+    ? `B14*B15*B16*B20*${result.normativeTrace.bimPdCoefficient}*B18`
+    : "B19*B20";
+  const rdFormula = isBim
+    ? `B14*B15*B16*B22*${result.normativeTrace.bimRdCoefficient}*B18`
+    : "B19*B22";
   const rows: Array<[string, ExcelJS.CellValue, string]> = [
     ["Норматив", project.sbcCollectionName, "Официальный документ, по которому выполнен расчёт."],
     ["Период", project.sbcFgisPeriodLabel, "Текущий квартал для пересчёта цены."],
@@ -55,14 +70,14 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Норматив от стоимости", project.sbcDesignPercent, "Используется только для таблицы 3.18."],
     ["Базовая цена", formula(basePriceFormula, result.basePrice), `Результат правила ${result.normativeTrace.ruleCode}.`],
     ["Коэффициент условий норматива", firstConditionCoefficient, "Для НЗ № 848/пр определяется выбранными условиями, а не свободным вводом."],
-    ["Остальные нормативные коэффициенты", secondConditionCoefficient, "Коэффициент специального статуса и, при таблице 3.18, коэффициент доли СМР."],
-    ["Цена с коэффициентами", formula("B14*B15*B16", result.adjustedBasePrice), "Базовая цена × коэффициенты."],
+    ["Остальные нормативные коэффициенты", secondConditionCoefficient, "Условие специальной таблицы, роль позиции, специальный статус и коэффициент доли СМР."],
+    ["Цена с коэффициентами", formula(adjustedFormula, result.adjustedBasePrice), isBim ? "Базовая цена × общие условия × доли стадий × отдельные коэффициенты информационной модели." : "Базовая цена × коэффициенты."],
     ["Индекс текущего периода", project.sbcIndexToCurrent, "Перевод базовой цены в выбранный квартал."],
     ["Текущая стоимость без НДС", formula("B17*B18", result.currentPriceWithoutVat), "Нормативная стоимость ПД + РД."],
-    ["Доля ПД", result.officialBreakdown ? result.officialBreakdown.pdSharePercent / 100 : project.sbcPdShare, "Доля проектной документации."],
-    ["ПД без НДС", formula("B19*B20", result.pdPriceWithoutVat), "Стоимость проектной документации."],
-    ["Доля РД", result.officialBreakdown ? result.officialBreakdown.rdSharePercent / 100 : project.sbcRdShare, "Доля рабочей документации."],
-    ["РД без НДС", formula("B19*B22", result.rdPriceWithoutVat), "Стоимость рабочей документации."],
+    ["Доля ПД", pdShare, isBim ? "Для документации с информационной моделью — 60% по п. 23 НЗ № 848/пр." : "Доля проектной документации."],
+    ["ПД без НДС", formula(pdFormula, result.pdPriceWithoutVat), "Стоимость проектной документации."],
+    ["Доля РД", rdShare, isBim ? "Для документации с информационной моделью — 40%; для РД по обычной ПД — 60% по п. 24." : "Доля рабочей документации."],
+    ["РД без НДС", formula(rdFormula, result.rdPriceWithoutVat), "Стоимость рабочей документации."],
     ["НДС", project.vatRate, "Действующая ставка в расчёте."],
     ["Итого с НДС", formula("B19*(1+B24)", result.currentPriceWithVat), "Стоимость проектных работ с НДС."],
     ["Источник", project.sbcFgisSourceUrl, "Прямая ссылка на официальный документ ФГИС ЦС."],
@@ -76,7 +91,12 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
     ["Доля СМР", result.normativeTrace.smrSharePercent / 100, "Доля строительно-монтажных работ в стоимости строительства."],
     ["Коэффициент доли СМР", result.normativeTrace.smrShareCoefficient, "Коэффициент по п. 140 Методики № 707/пр."],
     ["Коэффициент условий № 848/пр", result.normativeTrace.normSpecificCoefficient, "1,1 при зоне охраны либо не менее трёх факторов стеснённости."],
+    ["Коэффициент специальной таблицы № 848/пр", result.normativeTrace.normTableCoefficient, "Таблицы 3.3.1, 3.5.1, 3.7.1, 3.11.1 или 3.17.1."],
+    ["Коэффициент роли позиции", result.normativeTrace.complexRoleCoefficient, "Основной, встроенный, сблокированный или повторно применяемый объект."],
     ["Коэффициент специального статуса", result.normativeTrace.specialStatusCoefficient, "1,3 при одновременном выполнении установленных условий и в период действия нормы."],
+    ["Коэффициент BIM для П", result.normativeTrace.bimPdCoefficient, "Таблица 1 приложения № 2 НЗ № 848/пр."],
+    ["Коэффициент BIM для Р", result.normativeTrace.bimRdCoefficient, "Таблица 1 приложения № 2 НЗ № 848/пр."],
+    ["Дополнительно: кондиционирование", result.normativeTrace.airConditioningAdditionalBasePrice, "3,1% для П + Р по п. 25, если раздел отсутствует в таблице распределения."],
     ["Общий коэффициент", result.normativeTrace.totalCoefficient, "Произведение всех применённых нормативных коэффициентов."],
     ["Блокирующие условия", result.normativeTrace.blockers.join("; "), "Причины, по которым итоговый расчёт остановлен."],
     ["Предупреждения", result.normativeTrace.warnings.join("; "), "Условия, которые нужно подтвердить документами."],
@@ -107,9 +127,9 @@ export async function buildPublicPirWorkbook(project: ProjectInput, result: SbcR
         section.code,
         section.name,
         section.pdSharePercent / 100,
-        formula(`'Расчёт'!$B$21*C${row}`, section.pdPriceWithoutVat),
+        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.pdPriceWithoutVat : formula(`'Расчёт'!$B$21*C${row}`, section.pdPriceWithoutVat),
         section.rdSharePercent / 100,
-        formula(`'Расчёт'!$B$23*E${row}`, section.rdPriceWithoutVat),
+        result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? section.rdPriceWithoutVat : formula(`'Расчёт'!$B$23*E${row}`, section.rdPriceWithoutVat),
         formula(`D${row}+F${row}`, section.totalPriceWithoutVat),
       ];
     });
@@ -162,6 +182,6 @@ export async function downloadPublicPirWorkbook(project: ProjectInput, result: S
   const blobData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   saveAs(
     new Blob([blobData as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `Нормативный_расчёт_ПИР_${new Date().toISOString().slice(0, 10)}.xlsx`,
+    `Расчёт_стоимости_проектных_работ_${new Date().toISOString().slice(0, 10)}.xlsx`,
   );
 }

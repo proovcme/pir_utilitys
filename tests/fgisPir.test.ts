@@ -19,6 +19,10 @@ import {
   resolveFgisNaturalPrice,
   smrShareCoefficient,
 } from "../src/domain/fgisPir";
+import {
+  fgisPir848BimCoefficients,
+  get848NormCondition,
+} from "../src/domain/fgisPir848Rules";
 
 const fgisPirManifest = manifestJson as {
   catalogSha256: string;
@@ -184,5 +188,13 @@ describe("FGIS PIR snapshot", () => {
     expect(explainFgisIndicator("посадочное место", "Здание кафе")).toMatchObject({
       label: "Количество посадочных мест",
     });
+  });
+
+  it("contains all BIM rows and context coefficients from norm 848", () => {
+    expect(fgisPir848BimCoefficients).toHaveLength(52);
+    expect(fgisPir848BimCoefficients[0]).toMatchObject({ id: 1, pd: 1.12, rd: 1.14 });
+    expect(fgisPir848BimCoefficients[51]).toMatchObject({ id: 52, pd: 1.15, rd: 1.16 });
+    expect(get848NormCondition("3.3", "hotel-5")).toMatchObject({ coefficient: 1.3 });
+    expect(get848NormCondition("3.11", "science-humanities")).toMatchObject({ coefficient: 0.7 });
   });
 });

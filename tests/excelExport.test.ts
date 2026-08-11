@@ -115,5 +115,18 @@ describe("exportEstimateWorkbook", () => {
     expect(publicCalculation.getCell("B19").value).toMatchObject({ formula: "B17*B18" });
     expect(publicBreakdown.getCell("D5").value).toMatchObject({ formula: "'Расчёт'!$B$21*C5" });
     expect(String(publicBreakdown.getCell("A3").value)).toContain("OVC.me");
+
+    const bimProject = { ...project, sbcInformationModel: true, sbcBimObjectGroupId: 3 };
+    const bimResult = calculateEstimate(bimProject, catalog).sbc;
+    const bimBytes = await buildPublicPirWorkbook(bimProject, bimResult);
+    const bimWorkbook = new ExcelJS.Workbook();
+    await bimWorkbook.xlsx.load(Buffer.from(bimBytes));
+    const bimCalculation = bimWorkbook.getWorksheet("Расчёт")!;
+    expect(bimCalculation.getCell("B17").value).toMatchObject({ formula: expect.stringContaining("1.16") });
+    expect(bimCalculation.getCell("B21").value).toMatchObject({ formula: expect.stringContaining("1.16") });
+    expect(bimCalculation.getCell("B23").value).toMatchObject({ formula: expect.stringContaining("1.18") });
+    const bimLabels = bimCalculation.getColumn("A").values.map(String);
+    expect(bimLabels).toContain("Коэффициент BIM для П");
+    expect(bimLabels).toContain("Коэффициент BIM для Р");
   });
 });

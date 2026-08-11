@@ -35,6 +35,7 @@ const publicProjectDefaults: ProjectInput = {
   sbcFgisApprovingAct: "",
   sbcFgisSourceUrl: "",
   sbcFgisCatalogSha256: "",
+  sbcCalculationDate: new Date().toISOString().slice(0, 10),
   rateMultiplier: 0,
   roleStepRate: 0,
   useGlobalCoefficient: false,
@@ -92,7 +93,7 @@ export function PublicPirApp() {
       <header className="public-pir-header">
         <a className="public-pir-brand" href="https://les.ovc.me/">
           <strong>Л.Е.С.</strong>
-          <span>Публичный калькулятор ПИР</span>
+          <span>Расчёт стоимости проектных работ</span>
         </a>
         <nav aria-label="Источники">
           <a href="https://fgiscs.minstroyrf.ru/frsn/pir/methods" target="_blank" rel="noreferrer">ФГИС ЦС</a>

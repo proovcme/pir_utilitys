@@ -168,7 +168,7 @@ describe("calculateEstimate", () => {
     expect(result.sbc.differenceWithoutVat).toBe(-443_795.2);
   });
 
-  it("derives structured normative coefficients and blocks unsupported scenarios", () => {
+  it("derives structured normative coefficients and requires a BIM object group", () => {
     const catalog = seedToCatalog(seedCatalog);
     const project = {
       ...seedCatalog.projectInput,
@@ -180,6 +180,7 @@ describe("calculateEstimate", () => {
       sbcConstrainedSiteFactors: ["traffic", "utilities", "storage"],
       sbcSpecialDefenseStatus: true,
       sbcParallelDesignConstruction: true,
+      sbcCalculationDate: "2026-08-11",
     };
     const result = calculateEstimate(project, catalog).sbc;
 
@@ -195,6 +196,54 @@ describe("calculateEstimate", () => {
     expect(blocked.normativeTrace.valid).toBe(false);
     expect(blocked.currentPriceWithoutVat).toBe(0);
     expect(blocked.normativeTrace.blockers[0]).toContain("информационной модели");
+  });
+
+  it("calculates BIM stages with separate appendix 2 coefficients", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcNaturalIndicator: 100,
+      sbcInformationModel: true,
+      sbcBimObjectGroupId: 3,
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.valid).toBe(true);
+    expect(result.normativeTrace.bimPdCoefficient).toBe(1.16);
+    expect(result.normativeTrace.bimRdCoefficient).toBe(1.18);
+    expect(result.pdPriceWithoutVat).toBeCloseTo(result.basePrice * 0.6 * 1.16, 2);
+    expect(result.rdPriceWithoutVat).toBeCloseTo(result.basePrice * 0.4 * 1.18, 2);
+    expect(result.currentPriceWithoutVat).toBeCloseTo(result.pdPriceWithoutVat + result.rdPriceWithoutVat, 2);
+    expect(result.officialBreakdown).toMatchObject({ pdSharePercent: 60, rdSharePercent: 40 });
+  });
+
+  it("applies the selected table coefficient and validates repeated sections", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const baseProject = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.3",
+      sbcFgisObjectName: "Здание гостиницы",
+      sbcNaturalIndicator: 2_000,
+      sbcNormConditionId: "hotel-5",
+    };
+    const hotel = calculateEstimate(baseProject, catalog).sbc;
+    expect(hotel.normativeTrace.normTableCoefficient).toBe(1.3);
+    expect(hotel.adjustedBasePrice).toBeCloseTo(hotel.basePrice * 1.3, 2);
+
+    const invalidRepeat = calculateEstimate({
+      ...baseProject,
+      sbcComplexObject: true,
+      sbcComplexRole: "repeated" as const,
+      sbcComplexRoleCoefficient: 0.1,
+    }, catalog).sbc;
+    expect(invalidRepeat.normativeTrace.valid).toBe(false);
+    expect(invalidRepeat.normativeTrace.blockers.join(" ")).toContain("от 0,2 до 0,8");
   });
 
   it("contains the expanded RD engineering marks and maps them to rate groups", () => {

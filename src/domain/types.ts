@@ -1,6 +1,7 @@
 export type CalculationType = "ФОТ" | "Ручной" | "Подряд" | "% от общего" | "Заголовок" | string;
 export type SbcCalculationMethod = "natural" | "constructionPercent";
 export type FgisPirKind = "design" | "survey";
+export type SbcComplexRole = "single" | "main" | "embedded" | "blocked" | "repeated";
 
 export interface ProjectInput {
   projectType?: string;
@@ -54,8 +55,22 @@ export interface ProjectInput {
   sbcHeritageProtectionZone?: boolean;
   sbcSpecialDefenseStatus?: boolean;
   sbcParallelDesignConstruction?: boolean;
+  /** Дата составления расчёта для проверки действия нормативных условий. */
+  sbcCalculationDate?: string;
   sbcInformationModel?: boolean;
+  /** Строка таблицы 1 приложения № 2 НЗ № 848/пр. */
+  sbcBimObjectGroupId?: number;
+  /** РД в форме информационной модели выполняется по ранее утверждённой обычной ПД (п. 24). */
+  sbcBimRdFromNonBimPd?: boolean;
+  /** Контекстный коэффициент из таблиц 3.3.1, 3.5.1, 3.7.1, 3.11.1 или 3.17.1. */
+  sbcNormConditionId?: string;
+  /** Стоимость проектирования кондиционируемых помещений в базовом уровне цен, руб. */
+  sbcAirConditioningDesignCost?: number;
   sbcComplexObject?: boolean;
+  /** Роль текущей позиции в составе объединённого, встроенного или повторного объекта. */
+  sbcComplexRole?: SbcComplexRole;
+  /** Согласованный коэффициент сокращённого объёма работ по пп. 152, 170 Методики № 707/пр. */
+  sbcComplexRoleCoefficient?: number;
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -237,7 +252,12 @@ export interface SbcResult {
     smrSharePercent: number;
     smrShareCoefficient: number;
     normSpecificCoefficient: number;
+    normTableCoefficient: number;
+    complexRoleCoefficient: number;
     specialStatusCoefficient: number;
+    bimPdCoefficient: number;
+    bimRdCoefficient: number;
+    airConditioningAdditionalBasePrice: number;
     totalCoefficient: number;
     blockers: string[];
     warnings: string[];

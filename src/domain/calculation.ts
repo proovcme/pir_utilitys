@@ -20,6 +20,11 @@ import {
   resolveFgisNaturalPriceForProject,
   smrShareCoefficient,
 } from "./fgisPir";
+import {
+  complexRoleLimit,
+  get848BimCoefficient,
+  get848NormCondition,
+} from "./fgisPir848Rules";
 
 const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -290,22 +295,35 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
     traceWarnings.push("Параметры неструктурированного документа введены вручную и должны быть проверены по официальному PDF.");
   }
 
-  if (isStructuredNorm && project.sbcInformationModel) {
-    blockers.push("Для информационной модели нужны стадийные коэффициенты приложения № 2; этот сценарий пока не автоматизирован.");
-  }
-  if (isStructuredNorm && project.sbcComplexObject) {
-    blockers.push("Для комплекса, встроенного объекта или повторных секций нужен отдельный расчёт по составу объектов и специальным пунктам норматива.");
-  }
-
   const constrainedFactors = new Set(project.sbcConstrainedSiteFactors ?? []).size;
   const normSpecificCoefficient = isStructuredNorm && (constrainedFactors >= 3 || project.sbcHeritageProtectionZone) ? 1.1 : 1;
+  const selectedNormCondition = isStructuredNorm
+    ? get848NormCondition(project.sbcFgisTableCode, project.sbcNormConditionId)
+    : undefined;
+  const normTableCoefficient = selectedNormCondition?.coefficient ?? 1;
+  if (project.sbcNormConditionId && !selectedNormCondition) {
+    traceWarnings.push("Условие из специальной таблицы сброшено: оно не относится к выбранному объекту.");
+  }
+
+  const complexRole = project.sbcComplexObject ? (project.sbcComplexRole ?? "main") : "single";
+  const complexLimit = complexRoleLimit(complexRole);
+  const requestedComplexCoefficient = project.sbcComplexRoleCoefficient ?? complexLimit.defaultValue;
+  if (project.sbcComplexObject && (!(requestedComplexCoefficient > 0) || requestedComplexCoefficient > complexLimit.max)) {
+    blockers.push(`Коэффициент позиции «${complexRole}» должен быть больше 0 и не превышать ${complexLimit.max}.`);
+  }
+  if (complexRole === "repeated" && requestedComplexCoefficient < 0.2) {
+    blockers.push("Для повторно применяемой документации коэффициент должен находиться в нормативном диапазоне от 0,2 до 0,8.");
+  }
+  const complexRoleCoefficient = project.sbcComplexObject ? requestedComplexCoefficient : 1;
+
   const specialRequested = Boolean(project.sbcSpecialDefenseStatus && project.sbcParallelDesignConstruction);
-  const specialPeriodEligible = project.sbcFgisPeriodLabel.includes("2026") && project.sbcFgisPeriodId === 426;
+  const calculationDate = project.sbcCalculationDate || new Date().toISOString().slice(0, 10);
+  const specialPeriodEligible = calculationDate >= "2026-05-17" && calculationDate <= "2026-12-31";
   const specialStatusCoefficient = isStructuredNorm && specialRequested && specialPeriodEligible ? 1.3 : 1;
   if (specialRequested && !specialPeriodEligible) {
     traceWarnings.push("Коэффициент 1,3 не применён: проверьте дату расчёта и действие временной нормы приказа № 180/пр.");
   } else if (specialStatusCoefficient === 1.3) {
-    traceWarnings.push("Коэффициент 1,3 применён для специального объекта при параллельном проектировании и строительстве; подтвердите дату расчёта не ранее 17.05.2026 и не позднее 31.12.2026.");
+    traceWarnings.push(`Коэффициент 1,3 применён по п. 169(1) Методики № 707/пр на дату ${calculationDate}; основание — включение объекта в специальный перечень и параллельное выполнение работ.`);
   }
   const smrSharePercent = project.sbcSmrSharePercent ?? 60;
   if (method === "constructionPercent" && (smrSharePercent < 0 || smrSharePercent > 100)) {
@@ -317,22 +335,74 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
   const legacyCoefficient = isStructuredNorm
     ? 1
     : (project.sbcComplexityCoefficient ?? 1) * (project.sbcAdjustmentCoefficient ?? 1);
-  const totalCoefficient = normSpecificCoefficient * specialStatusCoefficient * appliedSmrCoefficient * legacyCoefficient;
+  const ordinaryCoefficient = normSpecificCoefficient
+    * normTableCoefficient
+    * complexRoleCoefficient
+    * specialStatusCoefficient
+    * appliedSmrCoefficient
+    * legacyCoefficient;
+
+  const airConditioningAdditionalBasePrice = isStructuredNorm
+    ? Math.max(0, project.sbcAirConditioningDesignCost ?? 0) * 0.031
+    : 0;
+  if (airConditioningAdditionalBasePrice > 0) {
+    traceWarnings.push("Стоимость раздела «Кондиционирование воздуха» добавлена в размере 3,1% для ПД + РД по п. 25 НЗ № 848/пр.");
+  }
+  const coreBasePrice = basePrice;
+  basePrice = coreBasePrice + airConditioningAdditionalBasePrice;
+
+  const bimCoefficient = project.sbcInformationModel
+    ? get848BimCoefficient(project.sbcBimObjectGroupId)
+    : undefined;
+  if (isStructuredNorm && project.sbcInformationModel && !bimCoefficient) {
+    blockers.push("Выберите вид объекта для коэффициентов информационной модели из приложения № 2.");
+  }
+  const bimPdCoefficient = bimCoefficient?.pd ?? 1;
+  const bimRdCoefficient = bimCoefficient?.rd ?? 1;
   const valid = blockers.length === 0;
   if (!valid) basePrice = 0;
-  const adjustedBasePrice = basePrice * totalCoefficient;
-  const currentPriceWithoutVat = adjustedBasePrice * (project.sbcIndexToCurrent ?? 1);
+  const effectiveCoreBasePrice = valid ? coreBasePrice : 0;
+  const conditionedBasePrice = basePrice * ordinaryCoefficient;
+  const conditionedCoreBasePrice = effectiveCoreBasePrice * ordinaryCoefficient;
+  const rawStandardPdShare = breakdownDocument ? breakdownDocument.stageShares.pd / 100 : Math.max(0, project.sbcPdShare ?? 0);
+  const rawStandardRdShare = breakdownDocument ? breakdownDocument.stageShares.rd / 100 : Math.max(0, project.sbcRdShare ?? 0);
+  const standardStageDenominator = rawStandardPdShare + rawStandardRdShare > 1
+    ? rawStandardPdShare + rawStandardRdShare
+    : 1;
+  const standardPdShare = rawStandardPdShare / standardStageDenominator;
+  const standardRdShare = rawStandardRdShare / standardStageDenominator;
+  const bimRdOnly = Boolean(project.sbcInformationModel && project.sbcBimRdFromNonBimPd);
+  const pdBasePrice = project.sbcInformationModel && bimCoefficient
+    ? (bimRdOnly ? 0 : conditionedBasePrice * 0.6 * bimPdCoefficient)
+    : conditionedBasePrice * standardPdShare;
+  const rdBasePrice = project.sbcInformationModel && bimCoefficient
+    ? conditionedBasePrice * (bimRdOnly ? 0.6 : 0.4) * bimRdCoefficient
+    : conditionedBasePrice * standardRdShare;
+  const otherBasePrice = project.sbcInformationModel
+    ? 0
+    : Math.max(0, conditionedBasePrice - pdBasePrice - rdBasePrice);
+  const adjustedBasePrice = pdBasePrice + rdBasePrice + otherBasePrice;
+  const totalCoefficient = basePrice > 0 ? adjustedBasePrice / basePrice : ordinaryCoefficient;
+  const currentIndex = project.sbcIndexToCurrent ?? 1;
+  const currentPriceWithoutVat = adjustedBasePrice * currentIndex;
   const currentPriceWithVat = currentPriceWithoutVat * (1 + (project.vatRate ?? 0));
-  const pdShare = breakdownDocument
-    ? breakdownDocument.stageShares.pd / 100
-    : Math.max(0, project.sbcPdShare ?? 0);
-  const rdShare = breakdownDocument
-    ? breakdownDocument.stageShares.rd / 100
-    : Math.max(0, project.sbcRdShare ?? 0);
-  const normalizedStageShare = pdShare + rdShare > 1 ? pdShare + rdShare : 1;
-  const pdPriceWithoutVat = currentPriceWithoutVat * (pdShare / normalizedStageShare);
-  const rdPriceWithoutVat = currentPriceWithoutVat * (rdShare / normalizedStageShare);
-  const otherPriceWithoutVat = Math.max(0, currentPriceWithoutVat - pdPriceWithoutVat - rdPriceWithoutVat);
+  const pdShare = project.sbcInformationModel ? (bimRdOnly ? 0 : 0.6) : standardPdShare;
+  const rdShare = project.sbcInformationModel ? (bimRdOnly ? 0.6 : 0.4) : standardRdShare;
+  const pdPriceWithoutVat = pdBasePrice * currentIndex;
+  const rdPriceWithoutVat = rdBasePrice * currentIndex;
+  const otherPriceWithoutVat = otherBasePrice * currentIndex;
+  const pdCorePriceWithoutVat = (
+    project.sbcInformationModel && bimCoefficient
+      ? (bimRdOnly ? 0 : conditionedCoreBasePrice * 0.6 * bimPdCoefficient)
+      : conditionedCoreBasePrice * standardPdShare
+  ) * currentIndex;
+  const rdCorePriceWithoutVat = (
+    project.sbcInformationModel && bimCoefficient
+      ? conditionedCoreBasePrice * (bimRdOnly ? 0.6 : 0.4) * bimRdCoefficient
+      : conditionedCoreBasePrice * standardRdShare
+  ) * currentIndex;
+  const pdAirPriceWithoutVat = Math.max(0, pdPriceWithoutVat - pdCorePriceWithoutVat);
+  const rdAirPriceWithoutVat = Math.max(0, rdPriceWithoutVat - rdCorePriceWithoutVat);
   const normativeDurationDays = (project.sbcBaseDurationDays ?? 0) * (project.sbcDurationCoefficient ?? 1);
   const differenceWithoutVat = totals.totalWithoutVat - currentPriceWithoutVat;
   const differenceWithVat = totals.totalWithVat - currentPriceWithVat;
@@ -368,15 +438,17 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
         objectName: breakdownObject.name,
         page: breakdownObject.page,
         stageSourcePage: breakdownDocument.stageSourcePage,
-        pdSharePercent: breakdownDocument.stageShares.pd,
-        rdSharePercent: breakdownDocument.stageShares.rd,
+        pdSharePercent: pdShare * 100,
+        rdSharePercent: rdShare * 100,
         pdPublishedTotalPercent: breakdownObject.totals.pd,
         rdPublishedTotalPercent: breakdownObject.totals.rd,
         sections: fgisPirBreakdownCatalog.sections.map((section) => {
           const pdSectionShare = breakdownObject.stages.pd[section.code] ?? 0;
           const rdSectionShare = breakdownObject.stages.rd[section.code] ?? 0;
-          const pdSectionPrice = pdPriceWithoutVat * pdSectionShare / 100;
-          const rdSectionPrice = rdPriceWithoutVat * rdSectionShare / 100;
+          const pdSectionPrice = pdCorePriceWithoutVat * pdSectionShare / 100
+            + (section.code === "КОН" ? pdAirPriceWithoutVat : 0);
+          const rdSectionPrice = rdCorePriceWithoutVat * rdSectionShare / 100
+            + (section.code === "КОН" ? rdAirPriceWithoutVat : 0);
           return {
             code: section.code,
             name: section.name,
@@ -389,10 +461,10 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
           };
         }),
         pdUnallocatedWithoutVat: roundMoney(
-          pdPriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.pd) / 100,
+          pdCorePriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.pd) / 100,
         ),
         rdUnallocatedWithoutVat: roundMoney(
-          rdPriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.rd) / 100,
+          rdCorePriceWithoutVat * Math.max(0, 100 - breakdownObject.totals.rd) / 100,
         ),
       }
     : undefined;
@@ -425,7 +497,12 @@ export function calculateSbcResult(project: ProjectInput, totals: EstimateTotals
       smrSharePercent,
       smrShareCoefficient: appliedSmrCoefficient,
       normSpecificCoefficient,
+      normTableCoefficient,
+      complexRoleCoefficient,
       specialStatusCoefficient,
+      bimPdCoefficient,
+      bimRdCoefficient,
+      airConditioningAdditionalBasePrice: roundMoney(airConditioningAdditionalBasePrice),
       totalCoefficient: roundMoney(totalCoefficient),
       blockers,
       warnings: traceWarnings,

@@ -19,6 +19,12 @@ import {
   resolveFgisNaturalPrice,
 } from "../domain/fgisPir";
 import type { FgisPirKind, ProjectInput, SbcResult } from "../domain/types";
+import {
+  complexRoleLimit,
+  fgisPir848BimCoefficients,
+  get848BimCoefficient,
+  get848NormConditions,
+} from "../domain/fgisPir848Rules";
 
 const currency = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -153,10 +159,22 @@ export function FgisPirCalculator({
         project.sbcConstructionCost * (project.sbcConstructionRebaseCoefficient ?? 1),
       )
     : undefined;
+  const normConditions = get848NormConditions(selectedTable?.code ?? selectedPercentTable?.code);
+  const selectedNormCondition = normConditions.find((item) => item.id === project.sbcNormConditionId);
+  const selectedBimCoefficient = get848BimCoefficient(project.sbcBimObjectGroupId);
+  const complexRole = project.sbcComplexRole ?? "main";
+  const complexLimit = complexRoleLimit(complexRole);
+  const conditioningIncluded = Boolean(
+    selectedBreakdownObject && (selectedBreakdownObject.stages.combined.КОН ?? 0) > 0,
+  );
 
   useEffect(() => {
     if (!categories.includes(category)) setCategory(selectedDocument?.category ?? categories[0] ?? "");
   }, [categories, category, selectedDocument?.category]);
+
+  useEffect(() => {
+    if (project.sbcNormConditionId && !selectedNormCondition) onChange({ sbcNormConditionId: "" });
+  }, [onChange, project.sbcNormConditionId, selectedNormCondition]);
 
   useEffect(() => {
     if (!selectedDocument) return;
@@ -397,14 +415,23 @@ export function FgisPirCalculator({
     onChange({ sbcConstrainedSiteFactors: [...next] });
   }
 
+  function selectComplexRole(role: ProjectInput["sbcComplexRole"]) {
+    if (!role) return;
+    const limit = complexRoleLimit(role);
+    onChange({ sbcComplexRole: role, sbcComplexRoleCoefficient: limit.defaultValue });
+  }
+
   if (!selectedDocument) {
     return <div className="fgis-empty">В официальном снимке нет нормативов для выбранного периода.</div>;
   }
 
-  const baseFormula =
+  const normativeBaseFormula =
     result.normativeTrace.formula || (project.sbcMethod === "natural"
       ? `${currency.format(project.sbcConstantA)} + ${currency.format(project.sbcConstantB)}/${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."} × ${number.format(project.sbcNaturalIndicator)} ${selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед."}`
       : `${currency.format(project.sbcConstructionCost)} × ${number.format(project.sbcDesignPercent * 100)}%`);
+  const baseFormula = result.normativeTrace.airConditioningAdditionalBasePrice > 0
+    ? `${normativeBaseFormula} + ${currency.format(result.normativeTrace.airConditioningAdditionalBasePrice)} (КОН)`
+    : normativeBaseFormula;
   const isSurveyMethod = kind === "survey";
   const indicatorUnit = selectedRow?.unit ?? project.sbcFgisIndicatorUnit ?? "ед.";
   const indicatorExplanation = explainFgisIndicator(
@@ -412,19 +439,29 @@ export function FgisPirCalculator({
     selectedRow?.objectName ?? project.sbcFgisObjectName ?? selectedObject,
   );
   const coefficientProduct = result.normativeTrace.totalCoefficient;
-  const stageShareSum = Math.max(0, project.sbcPdShare) + Math.max(0, project.sbcRdShare);
+  const displayedPdShare = result.officialBreakdown
+    ? result.officialBreakdown.pdSharePercent / 100
+    : Math.max(0, project.sbcPdShare);
+  const displayedRdShare = result.officialBreakdown
+    ? result.officialBreakdown.rdSharePercent / 100
+    : Math.max(0, project.sbcRdShare);
+  const stageShareSum = displayedPdShare + displayedRdShare;
   const stageShareDenominator = stageShareSum > 1 ? stageShareSum : 1;
-  const effectivePdShare = Math.max(0, project.sbcPdShare) / stageShareDenominator;
-  const effectiveRdShare = Math.max(0, project.sbcRdShare) / stageShareDenominator;
+  const effectivePdShare = displayedPdShare / stageShareDenominator;
+  const effectiveRdShare = displayedRdShare / stageShareDenominator;
   const effectiveOtherShare = Math.max(0, 1 - effectivePdShare - effectiveRdShare);
 
   return (
     <section className="fgis-calculator">
       <div className="fgis-intro">
         <div>
-          <span className="fgis-kicker">ФГИС ЦС · ПИР</span>
-          <h2>Нормативный расчёт без поиска по вкладкам</h2>
-          <p>Выберите вид работ и норматив. Уровень цен и квартальный индекс подставятся из официального снимка.</p>
+          <span className="fgis-kicker">ФГИС ЦС · ПРОЕКТНЫЕ РАБОТЫ</span>
+          <h2>{kind === "survey"
+            ? "Расчёт стоимости инженерных изысканий по ФГИС ЦС"
+            : selectedDocument.guid === "b90117ab-5223-4a7a-89ae-a8bcbb88f689"
+              ? "Расчёт стоимости проектных работ по нормативу № 848/пр"
+              : "Расчёт стоимости проектных работ по ФГИС ЦС"}</h2>
+          <p>По данным ФГИС ЦС, с пересчётом в текущий уровень цен.</p>
         </div>
         <div className="fgis-sync-state">
           <CheckCircle2 size={18} />
@@ -438,10 +475,10 @@ export function FgisPirCalculator({
       <div className="fgis-purpose">
         <BookOpen size={22} />
         <div>
-          <h3>Нормативный расчёт стоимости проектирования</h3>
+          <h3>Нормативный расчёт стоимости проектных работ</h3>
           <p>Определяет обоснованную стоимость подготовки проектной и рабочей документации по нормативам Минстроя и переводит её в выбранный текущий уровень цен.</p>
           <div className="fgis-purpose-grid">
-            <span><b>Для чего</b> Обоснование цены ПИР, договора и сметы на проектные работы.</span>
+            <span><b>Для чего</b> Обоснование цены договора и сметы на проектные работы.</span>
             <span><b>Что получите</b> Общую стоимость, ПД и РД, стоимость каждого раздела, НДС и паспорт источника.</span>
             <span><b>Чем не является</b> Это не локальная или объектная смета строительства и не расчёт материалов и СМР.</span>
           </div>
@@ -726,8 +763,56 @@ export function FgisPirCalculator({
                   <small className="field-hint">Коэффициент 1,1 применяется для зоны охраны либо при наличии не менее трёх из пяти факторов стеснённости.</small>
                   <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcSpecialDefenseStatus)} onChange={(event) => onChange({ sbcSpecialDefenseStatus: event.target.checked })} /><span>Специальный объект обороны или безопасности</span></label>
                   <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcParallelDesignConstruction)} onChange={(event) => onChange({ sbcParallelDesignConstruction: event.target.checked })} /><span>Проектирование и строительство выполняются параллельно</span></label>
+                  {project.sbcSpecialDefenseStatus || project.sbcParallelDesignConstruction ? (
+                    <label className="field">
+                      <span>Дата составления расчёта</span>
+                      <input type="date" value={project.sbcCalculationDate ?? new Date().toISOString().slice(0, 10)} onChange={(event) => onChange({ sbcCalculationDate: event.target.value })} />
+                      <small className="field-hint">Коэффициент 1,3 действует с 17.05.2026 для объектов из специального перечня; особенности по постановлению № 223 действуют до 31.12.2026.</small>
+                    </label>
+                  ) : null}
+                  {normConditions.length ? (
+                    <label className="field">
+                      <span>Специальное условие выбранной таблицы</span>
+                      <select value={selectedNormCondition?.id ?? ""} onChange={(event) => onChange({ sbcNormConditionId: event.target.value })}>
+                        <option value="">Нет</option>
+                        {normConditions.map((item) => <option key={item.id} value={item.id}>{item.label} · K {number.format(item.coefficient)}</option>)}
+                      </select>
+                      <small className="field-hint">Показываются только коэффициенты, предусмотренные таблицей {selectedTable?.code ?? selectedPercentTable?.code} НЗ № 848/пр.</small>
+                    </label>
+                  ) : null}
                   <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcInformationModel)} onChange={(event) => onChange({ sbcInformationModel: event.target.checked })} /><span>Требуется информационная модель</span></label>
-                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} onChange={(event) => onChange({ sbcComplexObject: event.target.checked })} /><span>Комплекс, встроенный объект или повторяющиеся секции</span></label>
+                  {project.sbcInformationModel ? (
+                    <>
+                      <label className="field">
+                        <span>Вид объекта для информационной модели</span>
+                        <select value={selectedBimCoefficient?.id ?? ""} onChange={(event) => onChange({ sbcBimObjectGroupId: Number(event.target.value) || undefined })}>
+                          <option value="">Выберите строку приложения № 2</option>
+                          {fgisPir848BimCoefficients.map((item) => <option key={item.id} value={item.id}>{item.id}. {item.name}</option>)}
+                        </select>
+                        <small className="field-hint">Коэффициенты П и Р берутся отдельно из официальной таблицы: {selectedBimCoefficient ? `П — ${number.format(selectedBimCoefficient.pd)}, Р — ${number.format(selectedBimCoefficient.rd)}` : "выберите ближайший вид объекта"}.</small>
+                      </label>
+                      <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcBimRdFromNonBimPd)} onChange={(event) => onChange({ sbcBimRdFromNonBimPd: event.target.checked })} /><span>Считается только РД в форме информационной модели по ранее утверждённой обычной ПД</span></label>
+                    </>
+                  ) : null}
+                  {!conditioningIncluded ? (
+                    <NumericField label="Проектирование кондиционируемых помещений" value={project.sbcAirConditioningDesignCost ?? 0} step={10000} suffix="₽" hint="Если раздел КОН отсутствует в таблице распределения, укажите стоимость проектирования кондиционируемых помещений в базовом уровне цен. Для П + Р добавится 3,1% по п. 25." onChange={(value) => onChange({ sbcAirConditioningDesignCost: value })} />
+                  ) : null}
+                  <label className="toggle"><input type="checkbox" checked={Boolean(project.sbcComplexObject)} onChange={(event) => onChange({ sbcComplexObject: event.target.checked, sbcComplexRole: event.target.checked ? "main" : "single", sbcComplexRoleCoefficient: 1 })} /><span>Эта позиция входит в комплекс, объединённый объект или повторную секцию</span></label>
+                  {project.sbcComplexObject ? (
+                    <>
+                      <label className="field">
+                        <span>Роль рассчитываемой позиции</span>
+                        <select value={complexRole} onChange={(event) => selectComplexRole(event.target.value as ProjectInput["sbcComplexRole"])}>
+                          <option value="main">Основное здание или отдельное здание комплекса · K 1</option>
+                          <option value="embedded">Встроенное помещение · K до 0,5</option>
+                          <option value="blocked">Сблокированное здание · K до 0,8</option>
+                          <option value="repeated">Повторная секция или корпус · K 0,2–0,8</option>
+                        </select>
+                        <small className="field-hint">Каждое здание комплекса рассчитывается отдельной позицией; итог комплекса получают суммированием позиций по пп. 18–20.</small>
+                      </label>
+                      {complexRole !== "main" ? <NumericField label="Коэффициент сокращённого объёма" value={project.sbcComplexRoleCoefficient ?? complexLimit.defaultValue} step={0.05} hint={`${complexLimit.source}. Максимум ${number.format(complexLimit.max)}; конкретное значение подтверждается составом и трудоёмкостью работ.`} onChange={(value) => onChange({ sbcComplexRoleCoefficient: value })} /> : null}
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -814,7 +899,14 @@ export function FgisPirCalculator({
                     <li><b>Условия:</b> применяются только выбранные условия с нормативным основанием. Общий множитель: {number.format(coefficientProduct)}.</li>
                     <li><b>Текущий уровень цен:</b> Cтек = Cусл × I. Индекс I = {number.format(project.sbcIndexToCurrent)}.</li>
                     <li><b>НДС:</b> Cндс = Cтек × (1 + {number.format(project.vatRate)}).</li>
-                    <li><b>Стадии:</b> ПД {number.format(effectivePdShare * 100)}%, РД {number.format(effectiveRdShare * 100)}%, прочее {number.format(effectiveOtherShare * 100)}%.</li>
+                    {project.sbcInformationModel ? (
+                      <li><b>Информационная модель:</b> {project.sbcBimRdFromNonBimPd ? "РД принято в размере 60% от полной цены по п. 24" : "ПД принято 60%, РД — 40% по п. 23"}; коэффициенты П — {number.format(result.normativeTrace.bimPdCoefficient)}, Р — {number.format(result.normativeTrace.bimRdCoefficient)}.</li>
+                    ) : (
+                      <li><b>Стадии:</b> ПД {number.format(effectivePdShare * 100)}%, РД {number.format(effectiveRdShare * 100)}%, прочее {number.format(effectiveOtherShare * 100)}%.</li>
+                    )}
+                    {selectedNormCondition ? <li><b>Специальное условие:</b> {selectedNormCondition.label}, K = {number.format(selectedNormCondition.coefficient)} ({selectedNormCondition.source}).</li> : null}
+                    {project.sbcComplexObject ? <li><b>Позиция комплекса:</b> K = {number.format(result.normativeTrace.complexRoleCoefficient)}; здания комплекса считаются отдельно и затем суммируются.</li> : null}
+                    {result.normativeTrace.airConditioningAdditionalBasePrice > 0 ? <li><b>Кондиционирование:</b> дополнительно {currency.format(result.normativeTrace.airConditioningAdditionalBasePrice)} в базовом уровне цен по п. 25.</li> : null}
                     <li><b>Разделы:</b> стоимость стадии умножается на официальный процент соответствующего раздела.</li>
                     <li><b>Срок:</b> T = {number.format(project.sbcBaseDurationDays)} × {number.format(project.sbcDurationCoefficient)} = {number.format(result.normativeDurationDays)} дн.</li>
                   </ol>
@@ -887,7 +979,7 @@ export function FgisPirCalculator({
             </div>
             <div className="fgis-output-actions">
               <div className="fgis-output-total">
-                <span>ПД + РД без НДС</span>
+                <span>{project.sbcInformationModel && project.sbcBimRdFromNonBimPd ? "РД без НДС" : "ПД + РД без НДС"}</span>
                 <strong>{currency.format(result.currentPriceWithoutVat)}</strong>
               </div>
               {onExport ? <button className="primary fgis-export" disabled={exporting} onClick={onExport}><Download size={17} />{exporting ? "Готовим XLSX…" : "Скачать XLSX"}</button> : null}
