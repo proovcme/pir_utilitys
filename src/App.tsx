@@ -16,10 +16,12 @@ import {
   Upload,
 } from "lucide-react";
 import { PrikinatorStandalone } from "./components/PrikinatorStandalone";
+import { FgisPirCalculator } from "./components/FgisPirCalculator";
 import { seedCatalog } from "./data/seedCatalog";
 import {
   calculateEstimate,
   calculateMonthlyDepreciation,
+  calculateSbcResult,
   getLineStaffing,
   getRateGroupCode,
   getStaffRoleMultiplier,
@@ -29,6 +31,7 @@ import {
   resolveCostGroup,
   seedToCatalog,
 } from "./domain/calculation";
+import { migrateCatalogLines } from "./domain/catalogMigration";
 import type {
   CalculationSnapshot,
   Catalog,
@@ -40,8 +43,10 @@ import type {
 import { exportEstimateWorkbook, saveEstimateWorkbook } from "./services/excelExport";
 import { exportRatesCsv, exportRatesXlsx, importRatesFile } from "./services/rateExchange";
 import { createStorageService } from "./services/storage";
+import { loadLociaRates } from "./services/lociaRates";
+import { deleteSnapshotFromLocia, syncSnapshotToLocia } from "./services/lociaPortfolio";
 
-type View = "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
+type View = "registry" | "newCalculation" | "summary" | "estimate" | "configuration" | "rates" | "sbc" | "prikinator" | "templates" | "history";
 type EstimateFilters = {
   id: string;
   section: string;
@@ -104,11 +109,14 @@ const getDefaultStageDuration = (stage: string, lines: EstimateLine[]) => {
 };
 const normalizeCatalog = (catalog: Catalog): Catalog => {
   const seed = seedToCatalog(seedCatalog);
+  const migratedLines = migrateCatalogLines(catalog.lines, seed.lines, catalog.version ?? 1);
   const rateMap = new Map(catalog.rates.map((rate) => [rate.code, rate]));
   const rdReferenceMap = new Map(seed.rdReference.map((item) => [item.mark, item]));
   catalog.rdReference?.forEach((item) => rdReferenceMap.set(item.mark, item));
-  const pp87ReferenceMap = new Map(seed.pp87Reference.map((item) => [`${item.type}:${item.number}:${item.mark ?? ""}`, item]));
-  catalog.pp87Reference?.forEach((item) => pp87ReferenceMap.set(`${item.type}:${item.number}:${item.mark ?? ""}`, item));
+  const pp87ReferenceMap = new Map(
+    (catalog.pp87Reference ?? []).map((item) => [`${item.type}:${item.number}:${item.mark ?? ""}`, item]),
+  );
+  seed.pp87Reference.forEach((item) => pp87ReferenceMap.set(`${item.type}:${item.number}:${item.mark ?? ""}`, item));
   seed.rates.forEach((seedRate) => {
     const currentRate = rateMap.get(seedRate.code);
     if (!currentRate) {
@@ -123,11 +131,12 @@ const normalizeCatalog = (catalog: Catalog): Catalog => {
   return {
     ...seed,
     ...catalog,
+    version: seed.version,
     rates: Array.from(rateMap.values()),
     rdReference: Array.from(rdReferenceMap.values()),
     pp87Reference: Array.from(pp87ReferenceMap.values()),
     presetSets: catalog.presetSets?.length ? catalog.presetSets : seed.presetSets,
-    lines: catalog.lines.map((line) => {
+    lines: migratedLines.map((line) => {
       const isPp87Section5Header =
         line.section === "Раздел 5" &&
         String(line.name ?? "").startsWith("Сведения об инженерном оборудовании");
@@ -164,6 +173,7 @@ const emptyEstimateFilters: EstimateFilters = {
 const isManualOrPercentLine = (line: EstimateLine) =>
   line.calculationType === "Ручной" ||
   line.calculationType === "Ручная сумма" ||
+  line.calculationType === "Подряд" ||
   line.calculationType === "% от общего";
 
 function makeSnapshot(name: string, project: ProjectInput, catalog: Catalog): CalculationSnapshot {
@@ -343,7 +353,7 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
 }
 
 export function App() {
-  const [view, setView] = useState<View>("summary");
+  const [view, setView] = useState<View>("registry");
   const [project, setProject] = useState<ProjectInput>(normalizeProject(seedCatalog.projectInput));
   const [catalog, setCatalog] = useState<Catalog>(() => normalizeCatalog(seedToCatalog(seedCatalog)));
   const [query, setQuery] = useState("");
@@ -361,8 +371,14 @@ export function App() {
   const [selectedConfigLineIds, setSelectedConfigLineIds] = useState<string[]>([]);
   const [presetDraftName, setPresetDraftName] = useState("Гостиницы");
   const [openCommentLineIds, setOpenCommentLineIds] = useState<string[]>([]);
+  const [newCalculationName, setNewCalculationName] = useState("");
+  const [newCalculationArea, setNewCalculationArea] = useState("");
 
   const result = useMemo(() => calculateEstimate(project, catalog), [project, catalog]);
+  const draftSbcResult = useMemo(
+    () => calculateSbcResult({ ...project, sbcComplexComponents: undefined }, result.totals),
+    [project, result.totals],
+  );
   const monthlyDepreciation = useMemo(() => calculateMonthlyDepreciation(project), [project]);
   const costGroups = useMemo(() => {
     const values = catalog.lines.map(resolveCostGroup);
@@ -530,11 +546,22 @@ export function App() {
 
   async function loadInitialData() {
     const workingState = await storage.getWorkingState();
+    let nextCatalog = normalizeCatalog(workingState?.catalog ?? seedToCatalog(seedCatalog));
     if (workingState) {
       setProject(normalizeProject(workingState.project));
-      setCatalog(normalizeCatalog(workingState.catalog));
-      setNotice(`Загружена конфигурация из БД: ${new Date(workingState.updatedAt).toLocaleString("ru-RU")}`);
     }
+    try {
+      const shared = await loadLociaRates(nextCatalog.rates);
+      if (shared) {
+        nextCatalog = { ...nextCatalog, rates: shared.rates };
+        setNotice(shared.notice);
+      } else if (workingState) {
+        setNotice(`Загружена конфигурация из БД: ${new Date(workingState.updatedAt).toLocaleString("ru-RU")}`);
+      }
+    } catch {
+      setNotice("Единые ставки Лоции временно недоступны — используется сохранённая конфигурация");
+    }
+    setCatalog(nextCatalog);
     await refreshSavedData();
   }
 
@@ -555,6 +582,10 @@ export function App() {
 
   function updateProject<K extends keyof ProjectInput>(key: K, value: ProjectInput[K]) {
     setProject((current) => ({ ...current, [key]: value }));
+  }
+
+  function patchProject(patch: Partial<ProjectInput>) {
+    setProject((current) => ({ ...current, ...patch }));
   }
 
   function updateStageDuration(stage: string, value: number) {
@@ -694,6 +725,65 @@ export function App() {
   function applyBuiltInPreset(key: keyof Pick<ProjectInput, "includeCommon" | "presetPdOks" | "presetPdLinear" | "presetRdFull" | "presetRdCore" | "presetRdFrequent">) {
     setProject((current) => ({ ...current, [key]: true }));
     setNotice("Шаблон состава применен");
+  }
+
+  function clearEstimate() {
+    setProject((current) => ({
+      ...current,
+      includeCommon: false,
+      presetPdOks: false,
+      presetPdLinear: false,
+      presetRdFull: false,
+      presetRdCore: false,
+      presetRdFrequent: false,
+      useGlobalCoefficient: false,
+      useGlobalDuration: false,
+    }));
+    setCatalog((current) => ({
+      ...current,
+      lines: current.lines.map((line) => ({ ...line, manualInclude: false, excluded: false })),
+    }));
+    setNotice("Расчет обнулен: активные работы и общие параметры выключены");
+  }
+
+  function startNewCalculation() {
+    setNewCalculationName("");
+    setNewCalculationArea("");
+    setView("newCalculation");
+  }
+
+  function createNewCalculation() {
+    const area = Number(newCalculationArea.replace(",", "."));
+    if (!newCalculationName.trim() || !Number.isFinite(area) || area <= 0) {
+      setNotice("Введите название объекта и площадь больше нуля");
+      return;
+    }
+    setProject(normalizeProject({
+      ...seedCatalog.projectInput,
+      projectType: newCalculationName.trim(),
+      address: "",
+      customer: "",
+      area,
+      includeCommon: false,
+      presetPdOks: false,
+      presetPdLinear: false,
+      presetRdFull: false,
+      presetRdCore: false,
+      presetRdFrequent: false,
+    }));
+    setCatalog((current) => ({
+      ...current,
+      lines: current.lines.map((line) => ({ ...line, manualInclude: false, excluded: false })),
+    }));
+    setNotice(`Создан новый расчет: ${newCalculationName.trim()}`);
+    setView("estimate");
+  }
+
+  function openSnapshot(snapshot: CalculationSnapshot) {
+    setProject(normalizeProject(snapshot.project));
+    setCatalog(snapshot.catalog);
+    setNotice(`Открыт расчет: ${snapshot.name}`);
+    setView("summary");
   }
 
   function calculateNow() {
@@ -943,6 +1033,7 @@ export function App() {
     const template: EstimateTemplate = {
       id: id(),
       name,
+      catalogVersion: catalog.version,
       project,
       lines: catalog.lines,
       rates: catalog.rates,
@@ -957,7 +1048,12 @@ export function App() {
   async function saveHistorySnapshot() {
     const snapshot = makeSnapshot(`Расчет от ${new Date().toLocaleString("ru-RU")}`, project, catalog);
     await storage.saveSnapshot(snapshot);
-    setNotice("Снимок расчета добавлен в историю");
+    try {
+      await syncSnapshotToLocia(snapshot);
+      setNotice("Снимок сохранён в истории и портфеле директора");
+    } catch (error) {
+      setNotice(`Снимок сохранён локально; портфель не обновлён: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+    }
     await refreshSavedData();
   }
 
@@ -971,14 +1067,24 @@ export function App() {
     if (path) {
       const saved = { ...snapshot, exportedPath: path };
       await storage.saveSnapshot(saved);
-      setNotice(`Excel выгружен: ${path}`);
+      try {
+        await syncSnapshotToLocia(saved);
+        setNotice(`Excel выгружен, расчёт добавлен в портфель: ${path}`);
+      } catch (error) {
+        setNotice(`Excel выгружен; портфель не обновлён: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+      }
       await refreshSavedData();
     }
   }
 
   function loadTemplate(template: EstimateTemplate) {
     setProject(normalizeProject(template.project));
-    setCatalog((current) => normalizeCatalog({ ...current, lines: template.lines, rates: template.rates }));
+    setCatalog((current) => normalizeCatalog({
+      ...current,
+      version: template.catalogVersion ?? 1,
+      lines: template.lines,
+      rates: template.rates,
+    }));
     setNotice(`Загружен шаблон: ${template.name}`);
     setView("summary");
   }
@@ -1021,8 +1127,14 @@ export function App() {
   }
 
   async function deleteSnapshot(snapshotId: string) {
-    await storage.deleteSnapshot(snapshotId);
-    await refreshSavedData();
+    try {
+      await deleteSnapshotFromLocia(snapshotId);
+      await storage.deleteSnapshot(snapshotId);
+      setNotice("Снимок удалён из истории и портфеля");
+      await refreshSavedData();
+    } catch (error) {
+      setNotice(`Не удалось удалить снимок: ${error instanceof Error ? error.message : "ошибка синхронизации"}`);
+    }
   }
 
   function HeaderFilter({ column, label }: { column: EstimateColumnKey; label: string }) {
@@ -1088,6 +1200,9 @@ export function App() {
           </div>
         </div>
         <nav>
+          <button className={view === "registry" ? "active" : ""} onClick={() => setView("registry")}>
+            <FileClock size={18} /> Реестр расчетов
+          </button>
           <button className={view === "summary" ? "active" : ""} onClick={() => setView("summary")}>
             <Calculator size={18} /> Итог
           </button>
@@ -1101,7 +1216,7 @@ export function App() {
             <FileSpreadsheet size={18} /> Ставки
           </button>
           <button className={view === "sbc" ? "active" : ""} onClick={() => setView("sbc")}>
-            <Calculator size={18} /> СБЦ
+            <Calculator size={18} /> ФГИС ПИР
           </button>
           <button className={view === "prikinator" ? "active" : ""} onClick={() => setView("prikinator")}>
             <Calculator size={18} /> Прикинатор
@@ -1131,17 +1246,23 @@ export function App() {
           <div>
             <h1>
               {view === "summary" && "Итог"}
+              {view === "registry" && "Реестр расчетов"}
+              {view === "newCalculation" && "Новый расчет"}
               {view === "estimate" && "Расчет состава работ"}
               {view === "configuration" && "Конфигурация разделов"}
               {view === "rates" && "Ставки и справочники"}
-              {view === "sbc" && "Расчет по СБЦ"}
+              {view === "sbc" && "Калькулятор ПИР по ФГИС ЦС"}
               {view === "prikinator" && "Прикинатор НЦС"}
               {view === "templates" && "Шаблоны"}
               {view === "history" && "История расчетов"}
             </h1>
             <span>{notice}</span>
           </div>
-          {view === "summary" ? (
+          {view === "registry" ? (
+            <div className="topbar-actions">
+              <button className="primary" onClick={startNewCalculation}><Plus size={18} /> Новый расчет</button>
+            </div>
+          ) : view === "summary" ? (
             <div className="topbar-actions">
               <button onClick={compareWithSbc}>
                 <Calculator size={18} /> Сравнить с СБЦ
@@ -1156,6 +1277,46 @@ export function App() {
             </button>
           )}
         </header>
+
+        {view === "registry" ? (
+          <div className="view-stack">
+            <section className="registry-hero">
+              <div>
+                <span className="eyebrow">КАЛЬКУЛЯТОР ОЦЕНКИ</span>
+                <h2>Реестр расчетов</h2>
+                <p>Начните новую оценку или продолжите сохраненный расчет.</p>
+              </div>
+              <button className="primary registry-new" onClick={startNewCalculation}><Plus size={20} /> Новый расчет</button>
+            </section>
+            <section className="panel full">
+              <div className="panel-heading"><h2>История</h2><span>{historyItems.length} расчетов</span></div>
+              {historyItems.length ? (
+                <div className="cards-grid">
+                  {historyItems.map((snapshot) => (
+                    <article className="item-card" key={snapshot.id}>
+                      <h3>{snapshot.name}</h3>
+                      <p>{new Date(snapshot.createdAt).toLocaleString("ru-RU")}</p>
+                      <strong>{currency.format(snapshot.result.totals.totalWithVat)}</strong>
+                      <span>{snapshot.result.totals.activeRows} активных строк</span>
+                      <div className="item-actions"><button onClick={() => openSnapshot(snapshot)}><FolderOpen size={16} /> Открыть</button></div>
+                    </article>
+                  ))}
+                </div>
+              ) : <div className="empty-state"><FileClock size={28} /><p>Сохраненных расчетов пока нет.</p><button onClick={startNewCalculation}>Создать первый</button></div>}
+            </section>
+          </div>
+        ) : null}
+
+        {view === "newCalculation" ? (
+          <section className="panel new-calculation-panel">
+            <div className="panel-heading"><h2>Данные объекта</h2><span>Оба поля обязательны</span></div>
+            <div className="form-grid">
+              <TextField label="Название объекта" value={newCalculationName} placeholder="Например: НИИ гриппа" onChange={setNewCalculationName} />
+              <NumberField label="Площадь объекта" value={Number(newCalculationArea.replace(",", ".")) || 0} min={0} onChange={(value) => setNewCalculationArea(String(value))} suffix="м²" />
+            </div>
+            <div className="panel-actions"><button onClick={() => setView("registry")}>Отмена</button><button className="primary" disabled={!newCalculationName.trim() || !(Number(newCalculationArea.replace(",", ".")) > 0)} onClick={createNewCalculation}>Перейти к расчету</button></div>
+          </section>
+        ) : null}
 
         {view === "summary" ? (
           <div className="view-stack">
@@ -1379,6 +1540,9 @@ export function App() {
               {catalog.presetSets.filter((preset) => preset.lineIds?.length).map((preset) => (
                 <button key={preset.name} onClick={() => applyPresetSet(preset.name)}>{preset.name}</button>
               ))}
+              <button className="danger reset-calculation" onClick={clearEstimate} title="Выключить все работы, не изменяя ставки и справочники">
+                <RotateCcw size={18} /> Обнулить всё
+              </button>
             </div>
             <div className="bulk-controls estimate-bulk-controls">
               <div>
@@ -1521,6 +1685,7 @@ export function App() {
 	                            <select value={line.calculationType === "Ручная сумма" ? "Ручной" : line.calculationType ?? ""} onChange={(event) => updateLine(line.id, { calculationType: event.target.value })}>
                                 <option>ФОТ</option>
                                 <option>Ручной</option>
+                                <option>Подряд</option>
                                 <option>% от общего</option>
                                 <option>Заголовок</option>
 	                              </select>
@@ -1760,56 +1925,16 @@ export function App() {
         ) : null}
 
         {view === "sbc" ? (
-          <section className="panel full">
-            <div className="panel-heading">
-              <h2>Методика СБЦ</h2>
-              <button className="primary" onClick={() => {
-                compareWithSbc();
-                setView("summary");
-              }}>
-                <Calculator size={18} /> Авторасчет и сравнение
-              </button>
-            </div>
-            <div className="method-note">
-              СБЦ обычно считает базовую цену проектирования по натуральному показателю <b>a + b x X</b> или процентом от стоимости строительства. Затем цена переводится в текущий уровень индексом и корректируется коэффициентами условий проектирования. Здесь все параметры редактируемые, потому что конкретные значения берутся из выбранного сборника и таблицы.
-            </div>
-            <div className="form-grid">
-              <TextField label="Сборник / таблица" value={project.sbcCollectionName} onChange={(value) => updateProject("sbcCollectionName", value)} />
-              <TextField label="Базисный уровень цен" value={project.sbcBaseYear} onChange={(value) => updateProject("sbcBaseYear", value)} />
-              <label className="field">
-                <span>Метод расчета</span>
-                <select value={project.sbcMethod} onChange={(event) => updateProject("sbcMethod", event.target.value as ProjectInput["sbcMethod"])}>
-                  <option value="natural">Натуральный показатель: a + b x X</option>
-                  <option value="constructionPercent">% от стоимости строительства</option>
-                </select>
-              </label>
-              <NumberField label="Индекс к текущему уровню" value={project.sbcIndexToCurrent} min={0} step={0.01} onChange={(value) => updateProject("sbcIndexToCurrent", value)} />
-            </div>
-            <div className="subsection-title">Базовая цена</div>
-            <div className="form-grid">
-              <NumberField label="Натуральный показатель X" value={project.sbcNaturalIndicator} min={0} step={1} onChange={(value) => updateProject("sbcNaturalIndicator", value)} suffix="ед." />
-              <NumberField label="Постоянная a" value={project.sbcConstantA} min={0} step={1000} onChange={(value) => updateProject("sbcConstantA", value)} suffix="₽" />
-              <NumberField label="Показатель b" value={project.sbcConstantB} min={0} step={1} onChange={(value) => updateProject("sbcConstantB", value)} suffix="₽/ед." />
-              <NumberField label="Стоимость строительства" value={project.sbcConstructionCost} min={0} step={1000000} onChange={(value) => updateProject("sbcConstructionCost", value)} suffix="₽" />
-              <NumberField label="% проектирования" value={project.sbcDesignPercent} min={0} step={0.001} onChange={(value) => updateProject("sbcDesignPercent", value)} suffix={formatPercent(project.sbcDesignPercent)} />
-            </div>
-            <div className="subsection-title">Коэффициенты и стадии</div>
-            <div className="form-grid">
-              <NumberField label="Категория сложности / условия" value={project.sbcComplexityCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcComplexityCoefficient", value)} />
-              <NumberField label="Дополнительный коэффициент" value={project.sbcAdjustmentCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcAdjustmentCoefficient", value)} />
-              <NumberField label="Доля ПД" value={project.sbcPdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcPdShare", value)} suffix={formatPercent(project.sbcPdShare)} />
-              <NumberField label="Доля РД" value={project.sbcRdShare} min={0} step={0.01} onChange={(value) => updateProject("sbcRdShare", value)} suffix={formatPercent(project.sbcRdShare)} />
-              <NumberField label="Базовый норматив срока" value={project.sbcBaseDurationDays} min={0} step={1} onChange={(value) => updateProject("sbcBaseDurationDays", value)} suffix="дн." />
-              <NumberField label="Коэффициент срока" value={project.sbcDurationCoefficient} min={0} step={0.05} onChange={(value) => updateProject("sbcDurationCoefficient", value)} />
-            </div>
-            <section className="stats-grid sbc-stats">
-              <StatCard label="Базовая цена" value={currency.format(result.sbc.basePrice)} />
-              <StatCard label="С коэффициентами" value={currency.format(result.sbc.adjustedBasePrice)} />
-              <StatCard label="Текущая без НДС" value={currency.format(result.sbc.currentPriceWithoutVat)} tone="accent" />
-              <StatCard label="Текущая с НДС" value={currency.format(result.sbc.currentPriceWithVat)} />
-              <StatCard label="Норматив срока" value={`${result.sbc.normativeDurationDays} дн.`} />
-            </section>
-          </section>
+          <FgisPirCalculator
+            project={project}
+            result={result.sbc}
+            draftResult={draftSbcResult}
+            onChange={patchProject}
+            onCompare={() => {
+              compareWithSbc();
+              setView("summary");
+            }}
+          />
         ) : null}
 
         {view === "prikinator" ? <PrikinatorStandalone /> : null}
@@ -1853,11 +1978,7 @@ export function App() {
                   <span>{snapshot.result.totals.activeRows} активных строк</span>
                   {snapshot.exportedPath ? <small>{snapshot.exportedPath}</small> : null}
                   <div className="item-actions">
-                    <button onClick={() => {
-                      setProject(normalizeProject(snapshot.project));
-                      setCatalog(snapshot.catalog);
-    setView("summary");
-                    }}>
+                    <button onClick={() => openSnapshot(snapshot)}>
                       <FolderOpen size={16} /> Открыть
                     </button>
                     <button className="danger" onClick={() => deleteSnapshot(snapshot.id)}><Trash2 size={16} /></button>

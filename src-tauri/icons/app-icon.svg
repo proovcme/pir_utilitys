@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="90" y1="60" x2="920" y2="970" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7b1f35"/>
+      <stop offset="0.58" stop-color="#a72525"/>
+      <stop offset="1" stop-color="#4a2339"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f4d28b"/>
+      <stop offset="1" stop-color="#c8872c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+  <path d="M180 292h664M180 428h664M180 564h664M316 180v664M512 180v664M708 180v664" stroke="#fff" stroke-opacity=".15" stroke-width="12"/>
+  <rect x="188" y="188" width="648" height="648" rx="92" fill="#fff" fill-opacity=".97"/>
+  <rect x="264" y="274" width="496" height="128" rx="32" fill="#7d2034"/>
+  <path d="M326 520h124M326 622h124M326 724h124M548 520h124M548 622h124" stroke="#d8e0eb" stroke-width="54" stroke-linecap="round"/>
+  <circle cx="638" cy="724" r="84" fill="url(#gold)"/>
+  <path d="M652 663c-19-12-62-10-62 24 0 47 80 12 80 58 0 37-49 41-74 24M630 644v146" fill="none" stroke="#7b1f35" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

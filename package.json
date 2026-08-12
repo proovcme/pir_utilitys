@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
+    "build:public-pir": "tsc && vite build --config vite.public.config.ts && node scripts/finalize_public_pir_build.mjs && node scripts/check_public_pir_bundle.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "tauri": "tauri",
-    "seed:extract": "python3 scripts/extract_seed.py"
+    "seed:extract": "python3 scripts/extract_seed.py",
+    "fgis:sync": "python3 scripts/sync_fgis_pir.py --ssh-host zt-box",
+    "fgis:tables": "uv run --with pdfplumber python scripts/extract_fgis_pir_tables.py && uv run --with pdfplumber python scripts/extract_fgis_pir_breakdown.py"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.6.0",
@@ -35,6 +38,9 @@
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

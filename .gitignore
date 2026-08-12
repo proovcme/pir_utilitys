@@ -2,6 +2,7 @@
 Thumbs.db
 node_modules/
 dist/
+dist-public/
 outputs/
 src-tauri/target/
 src-tauri/gen/
@@ -23,3 +24,4 @@ src-tauri/gen/
 *.AppImage
 *.deb
 *.rpm
+__pycache__/

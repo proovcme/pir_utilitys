@@ -1,17 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { seedCatalog } from "../src/data/seedCatalog";
-import { calculateEstimate, getRateGroupCode, seedToCatalog } from "../src/domain/calculation";
+import { calculateEstimate, calculateSbcResult, getRateGroupCode, seedToCatalog } from "../src/domain/calculation";
+import type { EstimateTotals, ProjectInput } from "../src/domain/types";
+
+const emptyTotals: EstimateTotals = {
+  activeRows: 0,
+  directWorks: 0,
+  personDays: 0,
+  bufferAmount: 0,
+  totalWithBuffer: 0,
+  overheadAmount: 0,
+  commercialMarkup: 0,
+  totalWithoutVat: 0,
+  vatAmount: 0,
+  totalWithVat: 0,
+  costWithoutVatPerSquareMeter: 0,
+  costWithVatPerSquareMeter: 0,
+  warningCount: 0,
+};
 
 describe("calculateEstimate", () => {
   it("matches the source workbook totals with default computer depreciation", () => {
     const result = calculateEstimate(seedCatalog.projectInput, seedToCatalog(seedCatalog));
 
-    expect(result.totals.activeRows).toBe(15);
-    expect(result.totals.directWorks).toBe(3_970_541.64);
-    expect(result.totals.bufferAmount).toBe(119_116.25);
-    expect(result.totals.totalWithoutVat).toBe(4_089_657.89);
-    expect(result.totals.vatAmount).toBe(899_724.74);
-    expect(result.totals.totalWithVat).toBe(4_989_382.62);
+    expect(result.totals.activeRows).toBe(18);
+    expect(result.totals.directWorks).toBe(3_743_888.16);
+    expect(result.totals.bufferAmount).toBe(112_316.64);
+    expect(result.totals.totalWithoutVat).toBe(3_856_204.8);
+    expect(result.totals.vatAmount).toBe(848_365.06);
+    expect(result.totals.totalWithVat).toBe(4_704_569.86);
   });
 
   it("lets manual include activate a line outside presets", () => {
@@ -68,6 +85,27 @@ describe("calculateEstimate", () => {
     });
 
     expect(result.totals.directWorks).toBe(123456);
+  });
+
+  it("calculates any subcontracted section from the entered contract amount", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const subcontractedLine = {
+      ...catalog.lines.find((line) => line.id === "ПП87.ОКС.8")!,
+      calculationType: "Подряд",
+      manualInclude: true,
+      excluded: false,
+      manualAmount: 987654.32,
+      presetPdOks: false,
+    };
+
+    const result = calculateEstimate(seedCatalog.projectInput, {
+      ...catalog,
+      lines: [subcontractedLine],
+    });
+
+    expect(result.activeLines[0].calculationType).toBe("Подряд");
+    expect(result.totals.directWorks).toBe(987654.32);
+    expect(result.totals.warningCount).toBe(0);
   });
 
   it("reports missing rate warnings for active FOT lines", () => {
@@ -144,7 +182,178 @@ describe("calculateEstimate", () => {
     expect(result.sbc.currentPriceWithoutVat).toBe(4_300_000);
     expect(result.sbc.currentPriceWithVat).toBe(5_246_000);
     expect(result.sbc.normativeDurationDays).toBe(90);
-    expect(result.sbc.differenceWithoutVat).toBe(-210_342.11);
+    expect(result.sbc.differenceWithoutVat).toBe(-443_795.2);
+  });
+
+  it("derives structured normative coefficients and requires a BIM object group", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcNaturalIndicator: 100,
+      sbcConstrainedSiteFactors: ["traffic", "utilities", "storage"],
+      sbcSpecialDefenseStatus: true,
+      sbcParallelDesignConstruction: true,
+      sbcCalculationDate: "2026-08-11",
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.valid).toBe(true);
+    expect(result.normativeTrace.ruleCode).toBe("8.1");
+    expect(result.normativeTrace.normSpecificCoefficient).toBe(1.1);
+    expect(result.normativeTrace.specialStatusCoefficient).toBe(1.3);
+    expect(result.normativeTrace.totalCoefficient).toBe(1.43);
+    expect(result.basePrice).toBe(358_100);
+    expect(result.adjustedBasePrice).toBe(512_083);
+
+    const blocked = calculateEstimate({ ...project, sbcInformationModel: true }, catalog).sbc;
+    expect(blocked.normativeTrace.valid).toBe(false);
+    expect(blocked.currentPriceWithoutVat).toBe(0);
+    expect(blocked.normativeTrace.blockers[0]).toContain("информационной модели");
+  });
+
+  it("calculates BIM stages with separate appendix 2 coefficients", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcNaturalIndicator: 100,
+      sbcInformationModel: true,
+      sbcBimObjectGroupId: 3,
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.valid).toBe(true);
+    expect(result.normativeTrace.bimPdCoefficient).toBe(1.16);
+    expect(result.normativeTrace.bimRdCoefficient).toBe(1.18);
+    expect(result.pdPriceWithoutVat).toBeCloseTo(result.basePrice * 0.6 * 1.16, 2);
+    expect(result.rdPriceWithoutVat).toBeCloseTo(result.basePrice * 0.4 * 1.18, 2);
+    expect(result.currentPriceWithoutVat).toBeCloseTo(result.pdPriceWithoutVat + result.rdPriceWithoutVat, 2);
+    expect(result.officialBreakdown).toMatchObject({ pdSharePercent: 60, rdSharePercent: 40 });
+
+    const wrongObjectType = calculateEstimate({ ...project, sbcBimObjectGroupId: 1 }, catalog).sbc;
+    expect(wrongObjectType.normativeTrace.valid).toBe(false);
+    expect(wrongObjectType.normativeTrace.blockers.join(" ")).toContain("не соответствует нормативной категории");
+  });
+
+  it("derives the KОН base from the conditioned natural indicator", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcAirConditionedIndicator: 50,
+    };
+    const result = calculateEstimate(project, catalog).sbc;
+
+    expect(result.normativeTrace.airConditioningDesignBasePrice).toBeGreaterThan(0);
+    expect(result.normativeTrace.airConditioningAdditionalBasePrice)
+      .toBeCloseTo(result.normativeTrace.airConditioningDesignBasePrice * 0.031, 2);
+    expect(result.basePrice).toBeGreaterThan(result.normativeTrace.airConditioningDesignBasePrice);
+  });
+
+  it("applies the selected table coefficient and validates repeated sections", () => {
+    const catalog = seedToCatalog(seedCatalog);
+    const baseProject = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.3",
+      sbcFgisObjectName: "Здание гостиницы",
+      sbcNaturalIndicator: 2_000,
+      sbcNormConditionId: "hotel-5",
+    };
+    const hotel = calculateEstimate(baseProject, catalog).sbc;
+    expect(hotel.normativeTrace.normTableCoefficient).toBe(1.3);
+    expect(hotel.adjustedBasePrice).toBeCloseTo(hotel.basePrice * 1.3, 2);
+
+    const invalidRepeat = calculateEstimate({
+      ...baseProject,
+      sbcComplexObject: true,
+      sbcComplexRole: "repeated" as const,
+      sbcComplexRoleCoefficient: 0.1,
+    }, catalog).sbc;
+    expect(invalidRepeat.normativeTrace.valid).toBe(false);
+    expect(invalidRepeat.normativeTrace.blockers.join(" ")).toContain("от 0,2 до 0,8");
+  });
+
+  it("sums separate complex positions and applies the PZU coefficient only to PZU", () => {
+    const house = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcComplexObject: true,
+      sbcComplexRole: "main" as const,
+      sbcComplexRoleCoefficient: 1,
+    } satisfies ProjectInput;
+    const hotel = {
+      ...house,
+      sbcFgisTableCode: "3.3",
+      sbcFgisObjectName: "Здание гостиницы",
+      sbcFgisBreakdownTableCode: "3",
+      sbcFgisBreakdownObjectId: "3",
+      sbcNaturalIndicator: 2_000,
+      sbcComplexRole: "embedded" as const,
+      sbcComplexRoleCoefficient: 0.5,
+    } satisfies ProjectInput;
+    const houseResult = calculateSbcResult(house, emptyTotals);
+    const hotelResult = calculateSbcResult(hotel, emptyTotals);
+    const housePzu = houseResult.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat ?? 0;
+    const complex = calculateSbcResult({
+      ...house,
+      sbcComplexComponents: [
+        { id: "house", name: "Жилой дом", pzuCoefficient: 0.5, input: house },
+        { id: "hotel", name: "Встроенная гостиница", pzuCoefficient: 1, input: hotel },
+      ],
+    }, emptyTotals);
+
+    expect(complex.normativeTrace.valid).toBe(true);
+    expect(complex.normativeTrace.ruleCode).toBe("Σ 18–20");
+    expect(complex.complexBreakdown?.componentCount).toBe(2);
+    expect(complex.currentPriceWithoutVat).toBeCloseTo(houseResult.currentPriceWithoutVat - housePzu * 0.5 + hotelResult.currentPriceWithoutVat, 2);
+    expect(complex.complexBreakdown?.components[0].pzuReductionWithoutVat).toBeCloseTo(housePzu * 0.5, 2);
+    expect(complex.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat)
+      .toBeCloseTo(housePzu * 0.5 + (hotelResult.officialBreakdown?.sections.find((section) => section.code === "ПЗУ")?.totalPriceWithoutVat ?? 0), 2);
+  });
+
+  it("stops the whole complex when a saved PZU coefficient is outside 0 to 1", () => {
+    const project = {
+      ...seedCatalog.projectInput,
+      sbcFgisKind: "design" as const,
+      sbcFgisNormGuid: "b90117ab-5223-4a7a-89ae-a8bcbb88f689",
+      sbcFgisTableCode: "3.1",
+      sbcFgisObjectName: "Индивидуальный жилой дом",
+      sbcFgisBreakdownTableCode: "1",
+      sbcFgisBreakdownObjectId: "1",
+      sbcNaturalIndicator: 100,
+      sbcComplexObject: true,
+      sbcComplexRole: "main" as const,
+      sbcComplexRoleCoefficient: 1,
+    } satisfies ProjectInput;
+    const complex = calculateSbcResult({
+      ...project,
+      sbcComplexComponents: [{ id: "bad-pzu", name: "Позиция 1", pzuCoefficient: 1.2, input: project }],
+    }, emptyTotals);
+
+    expect(complex.normativeTrace.valid).toBe(false);
+    expect(complex.currentPriceWithoutVat).toBe(0);
+    expect(complex.normativeTrace.blockers.join(" ")).toContain("от 0 до 1");
   });
 
   it("contains the expanded RD engineering marks and maps them to rate groups", () => {
@@ -160,6 +369,20 @@ describe("calculateEstimate", () => {
       const reference = referenceByMark.get(mark);
       expect(reference, `Нет марки ${mark} в базе РД`).toBeDefined();
       expect(getRateGroupCode(reference?.departmentCode), `Нет группы ставок для ${mark}`).toBeTruthy();
+    });
+  });
+
+  it("contains the current PP87 OKS sections and requested general work", () => {
+    const oksSections = seedCatalog.pp87Reference
+      .filter((item) => item.type === "ОКС" && !String(item.number).includes("."))
+      .map((item) => String(item.number));
+    expect(oksSections).toEqual(Array.from({ length: 13 }, (_, index) => String(index + 1)));
+    expect(seedCatalog.lines.find((line) => line.id === "ПП87.ОКС.8")?.departmentCode).toBe("ООС");
+    expect(seedCatalog.lines.find((line) => line.id === "ДОП.ПД.АКУСТИКА")?.calculationType).toBe("Подряд");
+    ["ОБЩ.ОБСЛЕДОВАНИЕ", "ОБЩ.СКАНИРОВАНИЕ", "ОБЩ.ГЕОДЕЗИЯ"].forEach((id) => {
+      const line = seedCatalog.lines.find((item) => item.id === id);
+      expect(line, `Нет общей работы ${id}`).toBeDefined();
+      expect(line?.calculationType).toBe("Подряд");
     });
   });
 });

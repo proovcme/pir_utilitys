@@ -1,5 +1,16 @@
-export type CalculationType = "ФОТ" | "Ручная сумма" | "Заголовок" | string;
+export type CalculationType = "ФОТ" | "Ручной" | "Подряд" | "% от общего" | "Заголовок" | string;
 export type SbcCalculationMethod = "natural" | "constructionPercent";
+export type FgisPirKind = "design" | "survey";
+export type SbcComplexRole = "single" | "main" | "embedded" | "blocked" | "repeated";
+
+export interface SbcComplexComponent {
+  id: string;
+  name: string;
+  /** Коэффициент к стоимости раздела ПЗУ по согласованию с заказчиком, п. 18 НЗ № 848/пр. */
+  pzuCoefficient: number;
+  /** Снимок нормативных исходных данных позиции без вложенной корзины комплекса. */
+  input: Partial<ProjectInput>;
+}
 
 export interface ProjectInput {
   projectType?: string;
@@ -21,6 +32,10 @@ export interface ProjectInput {
   sbcConstantA: number;
   sbcConstantB: number;
   sbcConstructionCost: number;
+  /** Коэффициент приведения исходной стоимости строительства к уровню цен норматива. */
+  sbcConstructionRebaseCoefficient?: number;
+  /** Доля строительно-монтажных работ в стоимости строительства, %. */
+  sbcSmrSharePercent?: number;
   sbcDesignPercent: number;
   sbcIndexToCurrent: number;
   sbcComplexityCoefficient: number;
@@ -29,6 +44,48 @@ export interface ProjectInput {
   sbcRdShare: number;
   sbcBaseDurationDays: number;
   sbcDurationCoefficient: number;
+  sbcFgisKind: FgisPirKind;
+  sbcFgisNormGuid: string;
+  sbcFgisPeriodId: number;
+  sbcFgisPeriodLabel: string;
+  sbcFgisApprovingAct: string;
+  sbcFgisSourceUrl: string;
+  sbcFgisCatalogSha256: string;
+  sbcFgisTableCode?: string;
+  sbcFgisTableTitle?: string;
+  sbcFgisObjectName?: string;
+  sbcFgisIndicatorUnit?: string;
+  sbcFgisIndicatorRange?: string;
+  sbcFgisTablePage?: number;
+  sbcFgisBreakdownTableCode?: string;
+  sbcFgisBreakdownObjectId?: string;
+  /** Факторы стеснённости площадки по п. 17 НЗ № 848/пр. */
+  sbcConstrainedSiteFactors?: string[];
+  sbcHeritageProtectionZone?: boolean;
+  sbcSpecialDefenseStatus?: boolean;
+  sbcParallelDesignConstruction?: boolean;
+  /** Дата составления расчёта для проверки действия нормативных условий. */
+  sbcCalculationDate?: string;
+  sbcInformationModel?: boolean;
+  /** Строка таблицы 1 приложения № 2 НЗ № 848/пр. */
+  sbcBimObjectGroupId?: number;
+  /** РД в форме информационной модели выполняется по ранее утверждённой обычной ПД (п. 24). */
+  sbcBimRdFromNonBimPd?: boolean;
+  /** Контекстный коэффициент из таблиц 3.3.1, 3.5.1, 3.7.1, 3.11.1 или 3.17.1. */
+  sbcNormConditionId?: string;
+  /** Натуральный показатель только кондиционируемой части объекта. */
+  sbcAirConditionedIndicator?: number;
+  /** Стоимость строительства только кондиционируемой части объекта, руб. */
+  sbcAirConditionedConstructionCost?: number;
+  /** @deprecated Ручной ввод готовой базовой цены, оставлен для совместимости старых расчётов. */
+  sbcAirConditioningDesignCost?: number;
+  sbcComplexObject?: boolean;
+  /** Роль текущей позиции в составе объединённого, встроенного или повторного объекта. */
+  sbcComplexRole?: SbcComplexRole;
+  /** Согласованный коэффициент сокращённого объёма работ по пп. 152, 170 Методики № 707/пр. */
+  sbcComplexRoleCoefficient?: number;
+  /** Позиции комплекса, каждая из которых рассчитывается отдельно и затем суммируется. */
+  sbcComplexComponents?: SbcComplexComponent[];
   rateMultiplier: number;
   roleStepRate: number;
   useGlobalCoefficient: boolean;
@@ -198,6 +255,75 @@ export interface SbcResult {
   differenceWithVat: number;
   ratioToSbc: number;
   notes: string[];
+  normativeTrace: {
+    valid: boolean;
+    ruleCode: string;
+    ruleTitle: string;
+    formula: string;
+    source: string;
+    sourcePage?: number;
+    baseConstructionCost?: number;
+    constructionRebaseCoefficient: number;
+    smrSharePercent: number;
+    smrShareCoefficient: number;
+    normSpecificCoefficient: number;
+    normTableCoefficient: number;
+    complexRoleCoefficient: number;
+    specialStatusCoefficient: number;
+    bimPdCoefficient: number;
+    bimRdCoefficient: number;
+    bimPdAdditionalWithoutVat: number;
+    bimRdAdditionalWithoutVat: number;
+    airConditioningDesignBasePrice: number;
+    airConditioningAdditionalBasePrice: number;
+    totalCoefficient: number;
+    blockers: string[];
+    warnings: string[];
+  };
+  officialBreakdown?: {
+    tableCode: string;
+    objectId: string;
+    objectName: string;
+    page: number;
+    stageSourcePage: number;
+    pdSharePercent: number;
+    rdSharePercent: number;
+    pdPublishedTotalPercent: number;
+    rdPublishedTotalPercent: number;
+    sections: Array<{
+      code: string;
+      name: string;
+      pdSharePercent: number;
+      rdSharePercent: number;
+      combinedSharePercent: number;
+      pdPriceWithoutVat: number;
+      rdPriceWithoutVat: number;
+      totalPriceWithoutVat: number;
+    }>;
+    pdUnallocatedWithoutVat: number;
+    rdUnallocatedWithoutVat: number;
+  };
+  complexBreakdown?: {
+    componentCount: number;
+    components: Array<{
+      id: string;
+      name: string;
+      tableCode: string;
+      objectName: string;
+      indicator: number;
+      indicatorUnit: string;
+      role: SbcComplexRole;
+      roleCoefficient: number;
+      pzuCoefficient: number;
+      pzuReductionWithoutVat: number;
+      basePrice: number;
+      currentPriceWithoutVat: number;
+      pdPriceWithoutVat: number;
+      rdPriceWithoutVat: number;
+      valid: boolean;
+      blockers: string[];
+    }>;
+  };
 }
 
 export interface EstimateResult {
@@ -226,6 +352,7 @@ export interface EstimateTemplate {
   id: string;
   name: string;
   description?: string;
+  catalogVersion?: number;
   project: ProjectInput;
   lines: EstimateLine[];
   rates: RateGroup[];
