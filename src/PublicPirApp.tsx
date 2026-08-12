@@ -95,12 +95,25 @@ interface PublicPirWorkspace {
 
 const publicWorkspaceKey = "ovc-pir-forms-v1";
 
+function priceLevelFromFgis(project: ProjectInput) {
+  const match = project.sbcFgisPeriodLabel.match(/([1-4])\s+квартал\s+(\d{4})/i);
+  if (!match) return null;
+  return { quarter: Number(match[1]), year: Number(match[2]) };
+}
+
 function loadPublicWorkspace(): PublicPirWorkspace {
   try {
     const stored = JSON.parse(localStorage.getItem(publicWorkspaceKey) ?? "null") as Partial<PublicPirWorkspace> | null;
+    const project = { ...publicProjectDefaults, ...(stored?.project ?? {}) };
+    const fgisPriceLevel = priceLevelFromFgis(project);
     return {
-      project: { ...publicProjectDefaults, ...(stored?.project ?? {}) },
-      passport: { ...DEFAULT_PIR_PASSPORT, ...(stored?.passport ?? {}) },
+      project,
+      passport: {
+        ...DEFAULT_PIR_PASSPORT,
+        priceLevelQuarter: stored?.passport?.priceLevelQuarter ?? fgisPriceLevel?.quarter ?? DEFAULT_PIR_PASSPORT.priceLevelQuarter,
+        priceLevelYear: stored?.passport?.priceLevelYear ?? fgisPriceLevel?.year ?? DEFAULT_PIR_PASSPORT.priceLevelYear,
+        ...(stored?.passport ?? {}),
+      },
       labor: {
         ...DEFAULT_PIR_LABOR_INPUT,
         ...(stored?.labor ?? {}),
