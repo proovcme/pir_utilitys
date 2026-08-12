@@ -12,14 +12,18 @@ import type { SbcResult } from "../domain/types";
 import {
   buildPirSummaryRows,
   calculatePirLabor,
+  calculatePirTravel,
   createPirLaborParticipant,
   createPirLaborWork,
+  createPirTravelTrip,
   qualificationsForWork,
   workKindLabel,
   type PirEstimatePassport,
   type PirLaborInput,
   type PirLaborWork,
   type PirSummaryExtra,
+  type PirTravelInput,
+  type PirTravelTrip,
   type PirWorkKind,
 } from "../domain/pirForms";
 
@@ -42,7 +46,7 @@ export function PirPassportFields({
     <details className="pir-passport-editor" open>
       <summary>
         <span>Данные для печатных форм</span>
-        <small>Общие для 1П, 2П и 3П</small>
+        <small>Общие для 2П, 3П, 4П и свода проекта</small>
       </summary>
       <div className="pir-passport-grid">
         <label className="field pir-span-2">
@@ -73,6 +77,10 @@ export function PirPassportFields({
           <span>Номер калькуляции 3П</span>
           <input value={value.estimate3pNumber} onChange={(event) => onChange({ estimate3pNumber: event.target.value })} />
         </label>
+        <label className="field">
+          <span>Номер расчёта 4П</span>
+          <input value={value.estimate4pNumber} onChange={(event) => onChange({ estimate4pNumber: event.target.value })} />
+        </label>
       </div>
     </details>
   );
@@ -93,6 +101,7 @@ function LaborWorkCard({
 }) {
   const result = calculatePirLabor({ ...input, works: [work] }).works[0];
   const qualifications = qualificationsForWork(work.kind);
+  const salaryCode = work.kind === "ordinary" ? "71.11" : "71.12";
 
   function changeKind(kind: PirWorkKind) {
     const allowed = qualificationsForWork(kind);
@@ -171,6 +180,7 @@ function LaborWorkCard({
                   })}>
                     {qualifications.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
                   </select>
+                  {participant.qualification.equivalentTitle ? <small className="pir-qualification-note">В этой же строке таблицы {participant.qualification.table}: {participant.qualification.equivalentTitle}</small> : null}
                 </td>
                 <td><b>{number.format(participant.qualification.index)}</b><small>табл. {participant.qualification.table}</small></td>
                 <td><input aria-label={`Дни участия: ${participant.qualification.title}`} type="number" min="0" step="1" value={participant.actualDays || ""} onChange={(event) => onChange({
@@ -188,6 +198,13 @@ function LaborWorkCard({
           </tbody>
           <tfoot><tr><th>Итого по работе</th><td>Ккв-уч {number.format(result.qualificationParticipationCoefficient)}</td><td></td><td>{number.format(result.totalHeadcount)} чел.</td><td>{number.format(result.weightedPersonDays)}</td><td></td></tr></tfoot>
         </table>
+      </div>
+      <div className="pir-cost-chain" aria-label="Как рассчитана стоимость работы">
+        <div><small>Средняя зарплата</small><b>{money.format(result.monthlySalary)}</b><span>ОКВЭД {salaryCode}, за месяц</span></div>
+        <div><small>За рабочий день</small><b>{money.format(result.averageDailySalary)}</b><span>зарплата ÷ {number.format(input.averageWorkingDaysPerMonth)} дня</span></div>
+        <div><small>Дневная выработка</small><b>{money.format(result.averageDailyOutput)}</b><span>полная стоимость дня с рентабельностью</span></div>
+        <div><small>Участие команды</small><b>{number.format(result.weightedPersonDays)}</b><span>дни × люди × индекс квалификации</span></div>
+        <div className="pir-cost-chain-total"><small>Стоимость работы без НДС</small><b>{money.format(result.costWithoutVat)}</b><span>дневная выработка × участие команды</span></div>
       </div>
       <div className="pir-work-footer">
         <button className="ghost" onClick={() => onChange({ ...work, participants: [...work.participants, createPirLaborParticipant(work.kind)] })}><Plus size={16} /> Добавить исполнителя</button>
@@ -234,13 +251,19 @@ export function PirLaborCalculator({
       </details>
 
       <div className="pir-labor-settings">
-        <div className="pir-settings-heading"><span className="fgis-step-number">01</span><div><h3>Исходные данные о средней зарплате</h3><p>Берётся не оклад конкретного сотрудника, а средняя начисленная зарплата Росстата за предшествующий год.</p></div></div>
+        <div className="pir-settings-heading"><span className="fgis-step-number">01</span><div><h3>Исходные данные о средней зарплате</h3><p>Это единая статистическая база для расчёта, а не оклады выбранных ниже сотрудников.</p></div></div>
+        <div className="pir-salary-explanation">
+          <div><b>Что нужно взять</b><span>Среднюю номинальную начисленную зарплату по России за январь–декабрь года, предшествующего составлению сметы.</span></div>
+          <div><b>Какой ОКВЭД выбрать</b><span>71.11 — обычные проектные работы. 71.12 — особо опасные, технически сложные, уникальные объекты и информационная модель.</span></div>
+          <div><b>Как она применяется</b><span>Зарплата переводится в стоимость рабочего дня. Список исполнителей затем учитывает дни, количество людей и индекс квалификации.</span></div>
+          <a href="https://www.rosstat.gov.ru/labor_market_employment_salaries" target="_blank" rel="noreferrer">Открыть официальный раздел Росстата</a>
+        </div>
         <div className="pir-settings-grid">
           <label className="field"><span>Год данных</span><input type="number" min="2000" max="2100" value={input.sourceYear || ""} onChange={(event) => patch({ sourceYear: numericValue(event.target.value) })} /></label>
           <label className="field"><span>Рабочих дней в месяце, в среднем</span><input type="number" min="0" step="0.01" value={input.averageWorkingDaysPerMonth || ""} onChange={(event) => patch({ averageWorkingDaysPerMonth: numericValue(event.target.value) })} /></label>
           <label className="field"><span>Средняя зарплата · ОКВЭД 71.11</span><div className="pir-number-affix"><input type="number" min="0" step="100" value={input.ordinaryMonthlySalary || ""} onChange={(event) => patch({ ordinaryMonthlySalary: numericValue(event.target.value) })} /><b>₽/мес.</b></div><small className="field-hint">Архитектурная деятельность.</small></label>
           <label className="field"><span>Средняя зарплата · ОКВЭД 71.12</span><div className="pir-number-affix"><input type="number" min="0" step="100" value={input.specialMonthlySalary || ""} onChange={(event) => patch({ specialMonthlySalary: numericValue(event.target.value) })} /><b>₽/мес.</b></div><small className="field-hint">Инженерно-техническое проектирование.</small></label>
-          <label className="field pir-span-2"><span>Источник значения</span><input value={input.salarySource} onChange={(event) => patch({ salarySource: event.target.value })} placeholder="Ссылка, таблица Росстата или реквизиты официальной публикации" /></label>
+          <label className="field pir-span-2"><span>Источник значения</span><input value={input.salarySource} onChange={(event) => patch({ salarySource: event.target.value })} placeholder="Например: Росстат, таблица зарплаты по видам деятельности за 2025 год" /><small className="field-hint">Запишите название таблицы, год и ссылку — эти данные попадут в XLSX.</small></label>
         </div>
         <div className="pir-fixed-rules">
           <span><b>40%</b> доля зарплаты в себестоимости, Кз = 0,4</span>
@@ -249,7 +272,8 @@ export function PirLaborCalculator({
         </div>
       </div>
 
-      <div className="pir-labor-list-heading"><div><span className="fgis-step-number">02</span><div><h3>Работы и состав исполнителей</h3><p>Каждая работа формирует отдельную калькуляцию 3П и отдельную строку в сводной форме 1П.</p></div></div><button className="primary" onClick={() => patch({ works: [...input.works, createPirLaborWork()] })}><Plus size={17} /> Добавить работу</button></div>
+      <div className="pir-labor-list-heading"><div><span className="fgis-step-number">02</span><div><h3>Работы и состав исполнителей</h3><p>Каждая самостоятельная работа формирует отдельную калькуляцию 3П. В свод проекта она включается только по вашему выбору.</p></div></div><button className="primary" onClick={() => patch({ works: [...input.works, createPirLaborWork()] })}><Plus size={17} /> Добавить работу</button></div>
+      <div className="pir-role-note"><b>Почему нет отдельных «научных сотрудников»</b><span>Методика приводит их как альтернативные названия в тех же строках таблицы 1.3. Для обычного проекта выбирайте привычную проектную должность — соответствующий индекс уже тот же.</span></div>
       <div className="pir-labor-list">
         {input.works.map((work, index) => <LaborWorkCard key={work.id} work={work} index={index} input={input} onChange={(next) => patch({ works: input.works.map((item) => item.id === work.id ? next : item) })} onRemove={() => patch({ works: input.works.filter((item) => item.id !== work.id) })} />)}
         {!input.works.length ? <div className="pir-empty-list"><Users size={26} /><b>Работы ещё не добавлены</b><span>Добавьте работу, затем укажите исполнителей и дни участия.</span></div> : null}
@@ -265,13 +289,96 @@ export function PirLaborCalculator({
   );
 }
 
+function TravelTripCard({
+  trip,
+  index,
+  input,
+  onChange,
+  onRemove,
+}: {
+  trip: PirTravelTrip;
+  index: number;
+  input: PirTravelInput;
+  onChange: (trip: PirTravelTrip) => void;
+  onRemove: () => void;
+}) {
+  const result = calculatePirTravel({ ...input, trips: [trip] }).trips[0];
+  return (
+    <article className="pir-labor-work pir-travel-card">
+      <div className="pir-labor-work-heading">
+        <div><span className="fgis-kicker">ПОЕЗДКА · {index + 1}</span><h4>{trip.destination || "Новый пункт назначения"}</h4></div>
+        <div className="pir-work-total"><span>Итого</span><strong>{money.format(result.total)}</strong><button className="pir-icon-button" onClick={onRemove} aria-label="Удалить поездку" title="Удалить поездку"><Trash2 size={16} /></button></div>
+      </div>
+      <div className="pir-work-fields pir-travel-fields">
+        <label className="field pir-span-2"><span>Пункт назначения</span><input value={trip.destination} onChange={(event) => onChange({ ...trip, destination: event.target.value })} placeholder="Например: Санкт-Петербург" /></label>
+        <label className="field"><span>Количество специалистов</span><input type="number" min="0" step="1" value={trip.specialists || ""} onChange={(event) => onChange({ ...trip, specialists: numericValue(event.target.value) })} /></label>
+        <label className="field"><span>Проезд туда и обратно</span><div className="pir-number-affix"><input type="number" min="0" step="100" value={trip.roundTripFarePerPerson || ""} onChange={(event) => onChange({ ...trip, roundTripFarePerPerson: numericValue(event.target.value) })} /><b>₽/чел.</b></div></label>
+        <label className="field"><span>Гостиница 3 звезды</span><div className="pir-number-affix"><input type="number" min="0" step="100" value={trip.hotelPerPersonNight || ""} onChange={(event) => onChange({ ...trip, hotelPerPersonNight: numericValue(event.target.value) })} /><b>₽/сут.</b></div></label>
+        <label className="field"><span>Суточные</span><div className="pir-number-affix"><input type="number" min="0" step="100" value={trip.perDiemPerPersonDay || ""} onChange={(event) => onChange({ ...trip, perDiemPerPersonDay: numericValue(event.target.value) })} /><b>₽/сут.</b></div></label>
+        <label className="field"><span>Продолжительность командировки</span><div className="pir-number-affix"><input type="number" min="0" step="1" value={trip.tripDays || ""} onChange={(event) => onChange({ ...trip, tripDays: numericValue(event.target.value) })} /><b>суток</b></div></label>
+        <label className="field"><span>Проживание в гостинице</span><div className="pir-number-affix"><input type="number" min="0" step="1" value={trip.hotelNights || ""} onChange={(event) => onChange({ ...trip, hotelNights: numericValue(event.target.value) })} /><b>суток</b></div></label>
+        <label className="field pir-span-2"><span>Основание стоимости</span><input value={trip.basis} onChange={(event) => onChange({ ...trip, basis: event.target.value })} placeholder="Билеты, предложение гостиницы, локальный акт о суточных" /><small className="field-hint">При фактическом возмещении расходы подтверждаются счетами, билетами и чеками.</small></label>
+      </div>
+      <div className="pir-cost-chain pir-travel-chain">
+        <div><small>Проезд</small><b>{money.format(result.fareTotal)}</b><span>{number.format(trip.specialists)} чел. × билет туда-обратно</span></div>
+        <div><small>Проживание</small><b>{money.format(result.hotelTotal)}</b><span>{number.format(trip.specialists)} чел. × {number.format(trip.hotelNights)} суток</span></div>
+        <div><small>Суточные</small><b>{money.format(result.perDiemTotal)}</b><span>{number.format(trip.specialists)} чел. × {number.format(trip.tripDays)} суток</span></div>
+        <div className="pir-cost-chain-total"><small>Итого по поездке</small><b>{money.format(result.total)}</b><span>без повторного начисления НДС</span></div>
+      </div>
+      <div className="pir-work-footer">
+        {result.warnings.length ? <span className="pir-work-warning"><CircleAlert size={15} /> {result.warnings[0]}{result.warnings.length > 1 ? ` Ещё: ${result.warnings.length - 1}.` : ""}</span> : <span className="pir-work-valid"><FileCheck2 size={15} /> Расходы заполнены</span>}
+      </div>
+    </article>
+  );
+}
+
+export function PirTravelCalculator({ input, onChange, exporting, onExport }: {
+  input: PirTravelInput;
+  onChange: (value: PirTravelInput) => void;
+  exporting: boolean;
+  onExport: () => void;
+}) {
+  const result = calculatePirTravel(input);
+  return (
+    <section className="pir-707-calculator">
+      <div className="pir-form-intro">
+        <div><span className="fgis-kicker">ФОРМА 4П · ПРИКАЗ № 707/ПР</span><h2>Командировочные расходы</h2><p>Отдельный расчёт поездок, непосредственно связанных с проектированием объекта.</p></div>
+        <div className="pir-form-badge"><FileCheck2 size={20} /><span><b>{money.format(result.total)}</b> по всем поездкам</span></div>
+      </div>
+      <div className="fgis-purpose pir-purpose-compact"><BookOpen size={22} /><div><h3>Что входит в форму 4П</h3><p>Проезд туда и обратно, гостиница класса «3 звезды» и суточные. Эти расходы не входят в расчёт 3П и добавляются отдельно при согласовании заказчика.</p></div></div>
+      <details className="fgis-user-guide" open>
+        <summary><span>Как заполнить расчёт</span><small>По каждой поездке</small></summary>
+        <ol>
+          <li><b>Укажите пункт назначения и количество специалистов.</b></li>
+          <li><b>Введите стоимость на одного человека:</b> проезд туда-обратно, гостиницу за сутки и суточные.</li>
+          <li><b>Укажите длительность:</b> все дни командировки и отдельно количество суток проживания.</li>
+          <li><b>Запишите основание стоимости.</b> Для понесённых расходов сохраняются заверенные копии подтверждающих документов.</li>
+        </ol>
+      </details>
+      <div className="pir-labor-list-heading"><div><span className="fgis-step-number">01</span><div><h3>Поездки</h3><p>Каждый пункт назначения рассчитывается отдельной строкой формы 4П.</p></div></div><button className="primary" onClick={() => onChange({ trips: [...input.trips, createPirTravelTrip()] })}><Plus size={17} /> Добавить поездку</button></div>
+      <div className="pir-labor-list">
+        {input.trips.map((trip, index) => <TravelTripCard key={trip.id} trip={trip} index={index} input={input} onChange={(next) => onChange({ trips: input.trips.map((item) => item.id === trip.id ? next : item) })} onRemove={() => onChange({ trips: input.trips.filter((item) => item.id !== trip.id) })} />)}
+        {!input.trips.length ? <div className="pir-empty-list"><FileCheck2 size={26} /><b>Поездок пока нет</b><span>Добавьте поездку, чтобы сформировать форму 4П.</span></div> : null}
+      </div>
+      <section className="pir-form-result">
+        <div><span className="fgis-kicker">ИТОГ ФОРМЫ 4П</span><h3>{money.format(result.total)}</h3><p>Командировочные расходы по всем поездкам</p></div>
+        <div className="pir-result-formula"><Calculator size={18} /><span><b>Расчёт:</b> количество специалистов × (проезд + гостиница × суток проживания + суточные × дней командировки).</span></div>
+        <button className="primary fgis-export" disabled={exporting || result.total <= 0} onClick={onExport}><Download size={17} /> {exporting ? "Готовим XLSX…" : "Скачать форму 4П"}</button>
+      </section>
+    </section>
+  );
+}
+
 export function PirSummary({
   passport,
   form2pResult,
   form2pName,
   laborInput,
+  travelInput,
   extras,
   onExtrasChange,
+  includedRowIds,
+  onIncludedRowIdsChange,
   exporting,
   onExport,
 }: {
@@ -279,32 +386,49 @@ export function PirSummary({
   form2pResult: SbcResult;
   form2pName: string;
   laborInput: PirLaborInput;
+  travelInput: PirTravelInput;
   extras: PirSummaryExtra[];
   onExtrasChange: (value: PirSummaryExtra[]) => void;
+  includedRowIds: string[];
+  onIncludedRowIdsChange: (value: string[]) => void;
   exporting: boolean;
   onExport: () => void;
 }) {
   const laborResult = calculatePirLabor(laborInput);
-  const rows = buildPirSummaryRows(passport, form2pName, form2pResult.currentPriceWithoutVat, laborResult, extras, laborInput.vatRate);
-  const totalWithoutVat = rows.reduce((sum, item) => sum + item.costWithoutVat, 0);
-  const vatAmount = rows.reduce((sum, item) => sum + item.vatAmount, 0);
+  const travelResult = calculatePirTravel(travelInput);
+  const rows = buildPirSummaryRows(passport, form2pName, form2pResult.currentPriceWithoutVat, laborResult, travelResult, extras, laborInput.vatRate);
+  const includedRows = rows.filter((row) => includedRowIds.includes(row.id));
+  const totalWithoutVat = includedRows.reduce((sum, item) => sum + item.costWithoutVat, 0);
+  const vatAmount = includedRows.reduce((sum, item) => sum + item.vatAmount, 0);
+
+  function toggleIncluded(rowId: string) {
+    onIncludedRowIdsChange(includedRowIds.includes(rowId)
+      ? includedRowIds.filter((id) => id !== rowId)
+      : [...includedRowIds, rowId]);
+  }
+
+  function addManualRow() {
+    const id = crypto.randomUUID();
+    onExtrasChange([...extras, { id, name: "", characteristic: "", reference: "", costWithoutVat: 0 }]);
+    onIncludedRowIdsChange([...includedRowIds, id]);
+  }
 
   return (
     <section className="pir-707-calculator">
       <div className="pir-form-intro">
-        <div><span className="fgis-kicker">ФОРМА 1П · СВОДНАЯ СМЕТА</span><h2>Общая стоимость проектных работ</h2><p>Собирает рассчитанные документы 2П и 3П в один итог по стройке.</p></div>
-        <div className="pir-form-badge"><FileCheck2 size={20} /><span><b>{rows.length}</b> {rows.length % 10 === 1 && rows.length % 100 !== 11 ? "позиция" : rows.length % 10 >= 2 && rows.length % 10 <= 4 && (rows.length % 100 < 10 || rows.length % 100 >= 20) ? "позиции" : "позиций"} в сводной смете</span></div>
+        <div><span className="fgis-kicker">ПОЛЬЗОВАТЕЛЬСКИЙ СВОД ПРОЕКТА</span><h2>Общая стоимость проектных работ</h2><p>Собирает выбранные расчёты 2П, 3П и 4П без присвоения несуществующего номера формы.</p></div>
+        <div className="pir-form-badge"><FileCheck2 size={20} /><span><b>{includedRows.length}</b> из {rows.length} позиций включено</span></div>
       </div>
-      <div className="fgis-purpose pir-purpose-compact"><BookOpen size={22} /><div><h3>Форма 1П ничего не пересчитывает повторно</h3><p>Она берёт готовую стоимость нормативной сметы 2П и каждой калькуляции 3П. Дополнительную внешнюю смету можно внести отдельной строкой с обязательной ссылкой на документ.</p></div></div>
+      <div className="fgis-purpose pir-purpose-compact"><BookOpen size={22} /><div><h3>Каждую работу включайте только один раз</h3><p>Если одна и та же работа рассчитана и в 2П, и в 3П, отметьте только подходящее основание. 4П добавляется отдельно, потому что командировки не входят в калькуляцию 3П.</p></div></div>
 
       <div className="pir-summary-table-scroll">
         <table className="pir-summary-table">
-          <thead><tr><th>№</th><th>Работы</th><th>Характеристика</th><th>Ссылка на смету</th><th>Без НДС</th><th>НДС</th><th>С НДС</th><th></th></tr></thead>
+          <thead><tr><th>В свод</th><th>№</th><th>Работы</th><th>Характеристика</th><th>Ссылка на расчёт</th><th>Стоимость</th><th>НДС отдельно</th><th>Итого</th><th></th></tr></thead>
           <tbody>
-            {rows.map((row, index) => <tr key={row.id}><td>{index + 1}</td><th>{row.name}<small>{row.source === "2p" ? "автоматически из 2П" : row.source === "3p" ? "автоматически из 3П" : "добавлено вручную"}</small></th><td>{row.characteristic}</td><td>{row.reference}</td><td>{money.format(row.costWithoutVat)}</td><td>{money.format(row.vatAmount)}</td><td><b>{money.format(row.costWithVat)}</b></td><td>{row.source === "manual" ? <button className="pir-icon-button" onClick={() => onExtrasChange(extras.filter((item) => item.id !== row.id))} aria-label="Удалить строку"><Trash2 size={15} /></button> : null}</td></tr>)}
-            {!rows.length ? <tr><td colSpan={8}><div className="pir-empty-list"><FileCheck2 size={26} /><b>Сводная смета пока пуста</b><span>Выполните расчёт в форме 2П или 3П.</span></div></td></tr> : null}
+            {rows.map((row, index) => <tr key={row.id} className={includedRowIds.includes(row.id) ? "is-included" : ""}><td><label className="pir-summary-check"><input type="checkbox" checked={includedRowIds.includes(row.id)} onChange={() => toggleIncluded(row.id)} /><span className="sr-only">Включить {row.name} в свод</span></label></td><td>{index + 1}</td><th>{row.name}<small>{row.source === "2p" ? "из формы 2П" : row.source === "3p" ? "из формы 3П" : row.source === "4p" ? "из формы 4П" : "добавлено вручную"}</small></th><td>{row.characteristic}</td><td>{row.reference}</td><td>{money.format(row.costWithoutVat)}</td><td>{row.source === "4p" ? "не начисляется повторно" : money.format(row.vatAmount)}</td><td><b>{money.format(row.costWithVat)}</b></td><td>{row.source === "manual" ? <button className="pir-icon-button" onClick={() => { onExtrasChange(extras.filter((item) => item.id !== row.id)); onIncludedRowIdsChange(includedRowIds.filter((id) => id !== row.id)); }} aria-label="Удалить строку"><Trash2 size={15} /></button> : null}</td></tr>)}
+            {!rows.length ? <tr><td colSpan={9}><div className="pir-empty-list"><FileCheck2 size={26} /><b>Свод проекта пока пуст</b><span>Выполните расчёт в форме 2П, 3П или 4П.</span></div></td></tr> : null}
           </tbody>
-          <tfoot><tr><th colSpan={4}>Итого по сводной смете</th><td>{money.format(totalWithoutVat)}</td><td>{money.format(vatAmount)}</td><td>{money.format(totalWithoutVat + vatAmount)}</td><td></td></tr></tfoot>
+          <tfoot><tr><th colSpan={5}>Итого по выбранным позициям</th><td>{money.format(totalWithoutVat)}</td><td>{money.format(vatAmount)}</td><td>{money.format(totalWithoutVat + vatAmount)}</td><td></td></tr></tfoot>
         </table>
       </div>
 
@@ -317,14 +441,14 @@ export function PirSummary({
             <label className="field"><span>Ссылка на документ</span><input value={item.reference} onChange={(event) => onExtrasChange(extras.map((row) => row.id === item.id ? { ...row, reference: event.target.value } : row))} /></label>
             <label className="field"><span>Стоимость без НДС</span><input type="number" min="0" value={item.costWithoutVat || ""} onChange={(event) => onExtrasChange(extras.map((row) => row.id === item.id ? { ...row, costWithoutVat: numericValue(event.target.value) } : row))} /></label>
           </div>)}
-          <button className="ghost" onClick={() => onExtrasChange([...extras, { id: crypto.randomUUID(), name: "", characteristic: "", reference: "", costWithoutVat: 0 }])}><Plus size={16} /> Добавить строку</button>
+          <button className="ghost" onClick={addManualRow}><Plus size={16} /> Добавить строку</button>
         </div>
       </details>
 
       <section className="pir-form-result">
-        <div><span className="fgis-kicker">ИТОГО ФОРМЫ 1П</span><h3>{money.format(totalWithoutVat + vatAmount)}</h3><p>{money.format(totalWithoutVat)} без НДС · НДС {money.format(vatAmount)}</p></div>
-        <div className="pir-result-formula"><FileCheck2 size={18} /><span>Сумма связана с текущими расчётами 2П и 3П. При их изменении сводная смета обновляется автоматически.</span></div>
-        <button className="primary fgis-export" disabled={exporting || rows.length === 0} onClick={onExport}><Download size={17} /> {exporting ? "Готовим XLSX…" : "Скачать форму 1П"}</button>
+        <div><span className="fgis-kicker">ИТОГО ПО СВОДУ ПРОЕКТА</span><h3>{money.format(totalWithoutVat + vatAmount)}</h3><p>{includedRows.length} выбранных позиций · НДС отдельно {money.format(vatAmount)}</p></div>
+        <div className="pir-result-formula"><FileCheck2 size={18} /><span>Это удобный свод рассчитанных документов, а не нормативная форма приложения № 7. В XLSX попадут только отмеченные строки.</span></div>
+        <button className="primary fgis-export" disabled={exporting || includedRows.length === 0} onClick={onExport}><Download size={17} /> {exporting ? "Готовим XLSX…" : "Скачать свод проекта"}</button>
       </section>
     </section>
   );

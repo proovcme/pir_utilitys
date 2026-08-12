@@ -5,10 +5,12 @@ import { calculateEstimate, seedToCatalog } from "../src/domain/calculation";
 import {
   buildPirSummaryRows,
   calculatePirLabor,
+  calculatePirTravel,
   type PirEstimatePassport,
   type PirLaborInput,
+  type PirTravelInput,
 } from "../src/domain/pirForms";
-import { buildPirLaborWorkbook, buildPirSummaryWorkbook } from "../src/services/pirFormsExcel";
+import { buildPirLaborWorkbook, buildPirSummaryWorkbook, buildPirTravelWorkbook } from "../src/services/pirFormsExcel";
 
 const passport: PirEstimatePassport = {
   constructionName: "Жилой дом",
@@ -18,6 +20,7 @@ const passport: PirEstimatePassport = {
   priceLevelYear: 2026,
   estimate2pNumber: "1",
   estimate3pNumber: "2",
+  estimate4pNumber: "3",
 };
 
 const labor: PirLaborInput = {
@@ -40,7 +43,21 @@ const labor: PirLaborInput = {
   }],
 };
 
-describe("PIR forms 1P/2P/3P", () => {
+const travel: PirTravelInput = {
+  trips: [{
+    id: "trip-1",
+    destination: "Санкт-Петербург",
+    specialists: 2,
+    roundTripFarePerPerson: 10_000,
+    hotelPerPersonNight: 5_000,
+    perDiemPerPersonDay: 1_000,
+    tripDays: 3,
+    hotelNights: 2,
+    basis: "Билеты и предложение гостиницы",
+  }],
+};
+
+describe("PIR forms 2P/3P/4P and project summary", () => {
   it("calculates form 3P by formulas 8.12-8.14", () => {
     const result = calculatePirLabor(labor);
     const work = result.works[0];
@@ -69,16 +86,26 @@ describe("PIR forms 1P/2P/3P", () => {
     expect(result.participants[0].qualification.index).toBe(1.84);
   });
 
-  it("builds form 1P from linked 2P and 3P results", () => {
-    const rows = buildPirSummaryRows(passport, "Жилой дом", 1_000_000, calculatePirLabor(labor), [], 0.22);
-
-    expect(rows).toHaveLength(2);
-    expect(rows[0].reference).toContain("форме 2П");
-    expect(rows[1].reference).toContain("форме 3П");
-    expect(rows.reduce((sum, item) => sum + item.costWithoutVat, 0)).toBeCloseTo(1_137_500);
+  it("calculates form 4P by destination and number of specialists", () => {
+    const result = calculatePirTravel(travel);
+    expect(result.trips[0].fareTotal).toBe(20_000);
+    expect(result.trips[0].hotelTotal).toBe(20_000);
+    expect(result.trips[0].perDiemTotal).toBe(6_000);
+    expect(result.total).toBe(46_000);
   });
 
-  it("exports auditable 3P and 1P workbooks", async () => {
+  it("builds an explicit project summary from 2P, 3P and 4P results", () => {
+    const rows = buildPirSummaryRows(passport, "Жилой дом", 1_000_000, calculatePirLabor(labor), calculatePirTravel(travel), [], 0.22);
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0].reference).toContain("форме 2П");
+    expect(rows[1].reference).toContain("форме 3П");
+    expect(rows[2].reference).toContain("форме 4П");
+    expect(rows[2].vatAmount).toBe(0);
+    expect(rows.reduce((sum, item) => sum + item.costWithoutVat, 0)).toBeCloseTo(1_183_500);
+  });
+
+  it("exports auditable 3P, 4P and project summary workbooks", async () => {
     const laborBytes = await buildPirLaborWorkbook(passport, labor);
     const laborWorkbook = new ExcelJS.Workbook();
     await laborWorkbook.xlsx.load(Buffer.from(laborBytes));
@@ -87,12 +114,21 @@ describe("PIR forms 1P/2P/3P", () => {
     expect(laborWorkbook.getWorksheet("Источники")).toBeDefined();
     expect(laborWorkbook.getWorksheet("Форма 3П")!.getCell("A1").value).toContain("форма 3П");
 
+    const travelBytes = await buildPirTravelWorkbook(passport, travel);
+    const travelWorkbook = new ExcelJS.Workbook();
+    await travelWorkbook.xlsx.load(Buffer.from(travelBytes));
+    expect(travelWorkbook.getWorksheet("Форма 4П")).toBeDefined();
+    expect(travelWorkbook.getWorksheet("Основания")).toBeDefined();
+    expect(travelWorkbook.getWorksheet("Форма 4П")!.getCell("A1").value).toContain("форма 4П");
+
     const catalog = seedToCatalog(seedCatalog);
     const estimate = calculateEstimate(seedCatalog.projectInput, catalog);
-    const summaryBytes = await buildPirSummaryWorkbook(passport, estimate.sbc, "Нормативный расчёт", labor, []);
+    const summaryBytes = await buildPirSummaryWorkbook(passport, estimate.sbc, "Нормативный расчёт", labor, travel, [], ["form-2p", "form-4p"]);
     const summaryWorkbook = new ExcelJS.Workbook();
     await summaryWorkbook.xlsx.load(Buffer.from(summaryBytes));
-    expect(summaryWorkbook.getWorksheet("Форма 1П")).toBeDefined();
-    expect(summaryWorkbook.getWorksheet("Форма 1П")!.getCell("A1").value).toBe("Сводная смета на проектные работы (форма 1П)");
+    expect(summaryWorkbook.getWorksheet("Свод проекта")).toBeDefined();
+    expect(summaryWorkbook.getWorksheet("Свод проекта")!.getCell("A1").value).toBe("Сводный расчёт стоимости проектных работ");
+    expect(summaryWorkbook.getWorksheet("Свод проекта")!.getCell("B12").value).toBe("Проектные работы по нормативу");
+    expect(summaryWorkbook.getWorksheet("Свод проекта")!.getCell("B13").value).toBe("Командировочные расходы");
   });
 });

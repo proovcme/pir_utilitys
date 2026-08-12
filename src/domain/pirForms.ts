@@ -8,11 +8,13 @@ export interface PirEstimatePassport {
   priceLevelYear: number;
   estimate2pNumber: string;
   estimate3pNumber: string;
+  estimate4pNumber: string;
 }
 
 export interface PirQualification {
   id: string;
   title: string;
+  equivalentTitle?: string;
   index: number;
   table: "1.3" | "1.4";
 }
@@ -93,21 +95,52 @@ export interface PirSummaryRow {
   costWithoutVat: number;
   vatAmount: number;
   costWithVat: number;
-  source: "2p" | "3p" | "manual";
+  source: "2p" | "3p" | "4p" | "manual";
+}
+
+export interface PirTravelTrip {
+  id: string;
+  destination: string;
+  specialists: number;
+  roundTripFarePerPerson: number;
+  hotelPerPersonNight: number;
+  perDiemPerPersonDay: number;
+  tripDays: number;
+  hotelNights: number;
+  basis: string;
+}
+
+export interface PirTravelInput {
+  trips: PirTravelTrip[];
+}
+
+export interface PirTravelTripResult {
+  trip: PirTravelTrip;
+  fareTotal: number;
+  hotelTotal: number;
+  perDiemTotal: number;
+  total: number;
+  warnings: string[];
+}
+
+export interface PirTravelResult {
+  trips: PirTravelTripResult[];
+  total: number;
+  warningCount: number;
 }
 
 export const TEXT_QUALIFICATIONS: PirQualification[] = [
-  { id: "text-1", title: "Начальник мастерской, отделения, отдела, лаборатории", index: 2.25, table: "1.3" },
-  { id: "text-2", title: "Комплексный ГАП, комплексный ГИП, руководитель проекта, главный научный сотрудник", index: 2, table: "1.3" },
-  { id: "text-3", title: "Заместитель начальника мастерской, отделения, отдела, лаборатории", index: 1.8, table: "1.3" },
-  { id: "text-4", title: "ГАП, ГИП, заведующий сектором, ведущий научный сотрудник", index: 1.6, table: "1.3" },
-  { id: "text-5", title: "Главный специалист, старший научный сотрудник", index: 1.32, table: "1.3" },
+  { id: "text-1", title: "Начальник мастерской, отделения, отдела или лаборатории", index: 2.25, table: "1.3" },
+  { id: "text-2", title: "Комплексный ГАП, комплексный ГИП или руководитель проекта", equivalentTitle: "главный научный сотрудник", index: 2, table: "1.3" },
+  { id: "text-3", title: "Заместитель начальника мастерской, отделения, отдела или лаборатории", index: 1.8, table: "1.3" },
+  { id: "text-4", title: "ГАП, ГИП или заведующий сектором", equivalentTitle: "ведущий научный сотрудник", index: 1.6, table: "1.3" },
+  { id: "text-5", title: "Главный специалист", equivalentTitle: "старший научный сотрудник", index: 1.32, table: "1.3" },
   { id: "text-6", title: "Руководитель группы, заведующий группой", index: 1.3, table: "1.3" },
-  { id: "text-7", title: "Ведущий специалист, научный сотрудник", index: 1, table: "1.3" },
-  { id: "text-8", title: "Специалист I категории, младший научный сотрудник", index: 0.9, table: "1.3" },
-  { id: "text-9", title: "Специалист II категории", index: 0.75, table: "1.3" },
-  { id: "text-10", title: "Специалист III категории", index: 0.65, table: "1.3" },
-  { id: "text-11", title: "Архитектор, инженер, экономист, специалист без категории", index: 0.6, table: "1.3" },
+  { id: "text-7", title: "Ведущий архитектор, инженер, экономист или специалист", equivalentTitle: "научный сотрудник", index: 1, table: "1.3" },
+  { id: "text-8", title: "Архитектор, инженер, экономист или специалист I категории", equivalentTitle: "младший научный сотрудник", index: 0.9, table: "1.3" },
+  { id: "text-9", title: "Архитектор, инженер, экономист или специалист II категории", index: 0.75, table: "1.3" },
+  { id: "text-10", title: "Архитектор, инженер, экономист или специалист III категории", index: 0.65, table: "1.3" },
+  { id: "text-11", title: "Архитектор, инженер, экономист или специалист без категории", index: 0.6, table: "1.3" },
   { id: "text-12", title: "Техник", index: 0.45, table: "1.3" },
 ];
 
@@ -127,6 +160,25 @@ export const DEFAULT_PIR_PASSPORT: PirEstimatePassport = {
   priceLevelYear: new Date().getFullYear(),
   estimate2pNumber: "1",
   estimate3pNumber: "2",
+  estimate4pNumber: "3",
+};
+
+export function createPirTravelTrip(): PirTravelTrip {
+  return {
+    id: crypto.randomUUID(),
+    destination: "",
+    specialists: 1,
+    roundTripFarePerPerson: 0,
+    hotelPerPersonNight: 0,
+    perDiemPerPersonDay: 0,
+    tripDays: 0,
+    hotelNights: 0,
+    basis: "",
+  };
+}
+
+export const DEFAULT_PIR_TRAVEL_INPUT: PirTravelInput = {
+  trips: [createPirTravelTrip()],
 };
 
 export function createPirLaborParticipant(kind: PirWorkKind = "ordinary"): PirLaborParticipant {
@@ -164,6 +216,23 @@ export const DEFAULT_PIR_LABOR_INPUT: PirLaborInput = {
 
 export function qualificationsForWork(kind: PirWorkKind) {
   return kind === "bim" ? BIM_QUALIFICATIONS : TEXT_QUALIFICATIONS;
+}
+
+export function qualificationSourceLabel(qualification: PirQualification) {
+  return qualification.equivalentTitle
+    ? `${qualification.title}; эквивалентная должность по таблице ${qualification.table}: ${qualification.equivalentTitle}`
+    : qualification.title;
+}
+
+function russianTripCount(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const word = mod10 === 1 && mod100 !== 11
+    ? "поездка"
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+      ? "поездки"
+      : "поездок";
+  return `${count} ${word}`;
 }
 
 export function workKindLabel(kind: PirWorkKind) {
@@ -250,11 +319,33 @@ export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
   };
 }
 
+export function calculatePirTravel(input: PirTravelInput): PirTravelResult {
+  const trips = input.trips.map((trip): PirTravelTripResult => {
+    const specialists = Math.max(0, trip.specialists);
+    const fareTotal = specialists * Math.max(0, trip.roundTripFarePerPerson);
+    const hotelTotal = specialists * Math.max(0, trip.hotelPerPersonNight) * Math.max(0, trip.hotelNights);
+    const perDiemTotal = specialists * Math.max(0, trip.perDiemPerPersonDay) * Math.max(0, trip.tripDays);
+    const warnings: string[] = [];
+    if (!trip.destination.trim()) warnings.push("Укажите пункт назначения.");
+    if (specialists <= 0) warnings.push("Укажите количество специалистов.");
+    if (trip.tripDays <= 0) warnings.push("Укажите продолжительность командировки.");
+    if (!trip.basis.trim()) warnings.push("Укажите основание стоимости расходов.");
+    if (fareTotal + hotelTotal + perDiemTotal <= 0) warnings.push("Укажите расходы на поездку.");
+    return { trip, fareTotal, hotelTotal, perDiemTotal, total: fareTotal + hotelTotal + perDiemTotal, warnings };
+  });
+  return {
+    trips,
+    total: trips.reduce((sum, item) => sum + item.total, 0),
+    warningCount: trips.reduce((sum, item) => sum + item.warnings.length, 0),
+  };
+}
+
 export function buildPirSummaryRows(
   passport: PirEstimatePassport,
   form2pName: string,
   form2pCostWithoutVat: number,
   laborResult: PirLaborResult,
+  travelResult: PirTravelResult | undefined,
   extras: PirSummaryExtra[],
   vatRate: number,
 ): PirSummaryRow[] {
@@ -286,6 +377,18 @@ export function buildPirSummaryRows(
       source: "3p",
     });
   });
+  if (travelResult && travelResult.total > 0) {
+    rows.push({
+      id: "form-4p",
+      name: "Командировочные расходы",
+      characteristic: russianTripCount(travelResult.trips.filter((item) => item.total > 0).length),
+      reference: `Сметный расчёт № ${passport.estimate4pNumber || "—"} по форме 4П`,
+      costWithoutVat: travelResult.total,
+      vatAmount: 0,
+      costWithVat: travelResult.total,
+      source: "4p",
+    });
+  }
   extras.forEach((item) => {
     const costWithoutVat = Math.max(0, item.costWithoutVat);
     const vatAmount = costWithoutVat * safeVat;

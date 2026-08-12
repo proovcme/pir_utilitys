@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, FileSpreadsheet, Users } from "lucide-react";
+import { ClipboardList, FileSpreadsheet, Plane, Users } from "lucide-react";
 import { FgisPirCalculator } from "./components/FgisPirCalculator";
-import { PirLaborCalculator, PirPassportFields, PirSummary } from "./components/PirForms707";
+import { PirLaborCalculator, PirPassportFields, PirSummary, PirTravelCalculator } from "./components/PirForms707";
 import { calculateSbcResult } from "./domain/calculation";
 import {
   DEFAULT_PIR_LABOR_INPUT,
   DEFAULT_PIR_PASSPORT,
+  DEFAULT_PIR_TRAVEL_INPUT,
   type PirEstimatePassport,
   type PirLaborInput,
   type PirSummaryExtra,
+  type PirTravelInput,
 } from "./domain/pirForms";
 import type { EstimateTotals, ProjectInput } from "./domain/types";
 
@@ -80,13 +82,15 @@ const emptyTotals: EstimateTotals = {
   personDays: 0,
 };
 
-type PirPublicMode = "1p" | "2p" | "3p";
+type PirPublicMode = "summary" | "2p" | "3p" | "4p";
 
 interface PublicPirWorkspace {
   project: ProjectInput;
   passport: PirEstimatePassport;
   labor: PirLaborInput;
+  travel: PirTravelInput;
   summaryExtras: PirSummaryExtra[];
+  summaryIncludedIds: string[];
 }
 
 const publicWorkspaceKey = "ovc-pir-forms-v1";
@@ -102,10 +106,16 @@ function loadPublicWorkspace(): PublicPirWorkspace {
         ...(stored?.labor ?? {}),
         works: stored?.labor?.works?.length ? stored.labor.works : DEFAULT_PIR_LABOR_INPUT.works,
       },
+      travel: {
+        ...DEFAULT_PIR_TRAVEL_INPUT,
+        ...(stored?.travel ?? {}),
+        trips: stored?.travel?.trips?.length ? stored.travel.trips : DEFAULT_PIR_TRAVEL_INPUT.trips,
+      },
       summaryExtras: stored?.summaryExtras ?? [],
+      summaryIncludedIds: stored?.summaryIncludedIds ?? [],
     };
   } catch {
-    return { project: publicProjectDefaults, passport: DEFAULT_PIR_PASSPORT, labor: DEFAULT_PIR_LABOR_INPUT, summaryExtras: [] };
+    return { project: publicProjectDefaults, passport: DEFAULT_PIR_PASSPORT, labor: DEFAULT_PIR_LABOR_INPUT, travel: DEFAULT_PIR_TRAVEL_INPUT, summaryExtras: [], summaryIncludedIds: [] };
   }
 }
 
@@ -115,7 +125,9 @@ export function PublicPirApp() {
   const [project, setProject] = useState<ProjectInput>(initial.project);
   const [passport, setPassport] = useState<PirEstimatePassport>(initial.passport);
   const [labor, setLabor] = useState<PirLaborInput>(initial.labor);
+  const [travel, setTravel] = useState<PirTravelInput>(initial.travel);
   const [summaryExtras, setSummaryExtras] = useState<PirSummaryExtra[]>(initial.summaryExtras);
+  const [summaryIncludedIds, setSummaryIncludedIds] = useState<string[]>(initial.summaryIncludedIds);
   const [exporting, setExporting] = useState(false);
   const patchProject = useCallback((patch: Partial<ProjectInput>) => {
     setProject((current) => ({ ...current, ...patch }));
@@ -126,8 +138,8 @@ export function PublicPirApp() {
     [project],
   );
   useEffect(() => {
-    localStorage.setItem(publicWorkspaceKey, JSON.stringify({ project, passport, labor, summaryExtras } satisfies PublicPirWorkspace));
-  }, [project, passport, labor, summaryExtras]);
+    localStorage.setItem(publicWorkspaceKey, JSON.stringify({ project, passport, labor, travel, summaryExtras, summaryIncludedIds } satisfies PublicPirWorkspace));
+  }, [project, passport, labor, travel, summaryExtras, summaryIncludedIds]);
 
   const patchPassport = useCallback((patch: Partial<PirEstimatePassport>) => {
     setPassport((current) => ({ ...current, ...patch }));
@@ -153,7 +165,17 @@ export function PublicPirApp() {
     }
   }, [labor, passport]);
 
-  const export1p = useCallback(async () => {
+  const export4p = useCallback(async () => {
+    setExporting(true);
+    try {
+      const { downloadPirTravelWorkbook } = await import("./services/pirFormsExcel");
+      await downloadPirTravelWorkbook(passport, travel);
+    } finally {
+      setExporting(false);
+    }
+  }, [passport, travel]);
+
+  const exportSummary = useCallback(async () => {
     setExporting(true);
     try {
       const { downloadPirSummaryWorkbook } = await import("./services/pirFormsExcel");
@@ -162,12 +184,14 @@ export function PublicPirApp() {
         result,
         result.officialBreakdown?.objectName ?? project.sbcFgisObjectName ?? "Нормативный расчёт",
         labor,
+        travel,
         summaryExtras,
+        summaryIncludedIds,
       );
     } finally {
       setExporting(false);
     }
-  }, [labor, passport, project.sbcFgisObjectName, result, summaryExtras]);
+  }, [labor, passport, project.sbcFgisObjectName, result, summaryExtras, summaryIncludedIds, travel]);
 
   return (
     <div className="public-pir-shell">
@@ -185,14 +209,15 @@ export function PublicPirApp() {
       <main className="public-pir-main">
         <section className="pir-document-switcher" aria-label="Сметные формы">
           <div>
-            <span className="fgis-kicker">КОМПЛЕКТ СМЕТ НА ПРОЕКТНЫЕ РАБОТЫ</span>
-            <h1>Формы 1П, 2П и 3П</h1>
-            <p>Локальные расчёты формируются в 2П и 3П, общий итог — в сводной форме 1П.</p>
+            <span className="fgis-kicker">РАСЧЁТ СТОИМОСТИ ПРОЕКТНЫХ РАБОТ</span>
+            <h1>Формы 2П, 3П и 4П</h1>
+            <p>Каждая работа рассчитывается одним способом. Отдельные результаты можно собрать в пользовательский свод проекта.</p>
           </div>
           <div className="pir-document-tabs" role="tablist">
-            <button className={mode === "1p" ? "active" : ""} onClick={() => setMode("1p")}><ClipboardList size={18} /><span><b>1П</b><small>Сводная смета</small></span></button>
+            <button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><ClipboardList size={18} /><span><b>Свод проекта</b><small>Выбранные расчёты</small></span></button>
             <button className={mode === "2p" ? "active" : ""} onClick={() => setMode("2p")}><FileSpreadsheet size={18} /><span><b>2П</b><small>По нормативу</small></span></button>
             <button className={mode === "3p" ? "active" : ""} onClick={() => setMode("3p")}><Users size={18} /><span><b>3П</b><small>По трудозатратам</small></span></button>
+            <button className={mode === "4p" ? "active" : ""} onClick={() => setMode("4p")}><Plane size={18} /><span><b>4П</b><small>Командировки</small></span></button>
           </div>
         </section>
 
@@ -205,7 +230,8 @@ export function PublicPirApp() {
           </div>
         ) : null}
         {mode === "3p" ? <PirLaborCalculator input={labor} onChange={setLabor} exporting={exporting} onExport={export3p} /> : null}
-        {mode === "1p" ? <PirSummary passport={passport} form2pResult={result} form2pName={result.officialBreakdown?.objectName ?? project.sbcFgisObjectName ?? ""} laborInput={labor} extras={summaryExtras} onExtrasChange={setSummaryExtras} exporting={exporting} onExport={export1p} /> : null}
+        {mode === "4p" ? <PirTravelCalculator input={travel} onChange={setTravel} exporting={exporting} onExport={export4p} /> : null}
+        {mode === "summary" ? <PirSummary passport={passport} form2pResult={result} form2pName={result.officialBreakdown?.objectName ?? project.sbcFgisObjectName ?? ""} laborInput={labor} travelInput={travel} extras={summaryExtras} onExtrasChange={setSummaryExtras} includedRowIds={summaryIncludedIds} onIncludedRowIdsChange={setSummaryIncludedIds} exporting={exporting} onExport={exportSummary} /> : null}
       </main>
 
       <footer className="public-pir-footer">

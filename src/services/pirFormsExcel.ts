@@ -3,11 +3,14 @@ import { saveAs } from "file-saver";
 import {
   buildPirSummaryRows,
   calculatePirLabor,
+  calculatePirTravel,
+  qualificationSourceLabel,
   workKindLabel,
   type PirEstimatePassport,
   type PirLaborInput,
   type PirSummaryExtra,
   type PirSummaryRow,
+  type PirTravelInput,
 } from "../domain/pirForms";
 import type { SbcResult } from "../domain/types";
 
@@ -111,7 +114,7 @@ export async function buildPirLaborWorkbook(passport: PirEstimatePassport, input
         : 0;
       form.getRow(current).values = [
         participantIndex + 1,
-        participant.qualification.title,
+        qualificationSourceLabel(participant.qualification),
         participant.actualDays,
         workResult.work.plannedDurationDays,
         participant.headcount,
@@ -183,7 +186,7 @@ export async function buildPirLaborWorkbook(passport: PirEstimatePassport, input
       workResult.work.name,
       workResult.work.stage,
       workKindLabel(workResult.work.kind),
-      participant.qualification.title,
+      qualificationSourceLabel(participant.qualification),
       participant.actualDays,
       workResult.work.plannedDurationDays,
       participant.headcount,
@@ -204,8 +207,57 @@ export async function buildPirLaborWorkbook(passport: PirEstimatePassport, input
   return data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data);
 }
 
+export async function buildPirTravelWorkbook(passport: PirEstimatePassport, input: PirTravelInput): Promise<Uint8Array> {
+  const result = calculatePirTravel(input);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "OVC.me";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Форма 4П", { views: [{ showGridLines: false }] });
+  sheet.getCell("A1").value = `Сметный расчёт № ${passport.estimate4pNumber || "—"} на командировочные расходы (форма 4П)`;
+  styleTitle(sheet.getCell("A1"));
+  sheet.mergeCells("A1:J1");
+  addPassport(sheet, passport, "4П");
+  sheet.getRow(11).values = ["№", "Пункт назначения", "Специалистов", "Проезд туда и обратно, ₽/чел.", "Гостиница 3 звезды, ₽/чел.-сут.", "Суточные, ₽/чел.-сут.", "Командировка, суток", "Проживание, суток", "Итого, ₽", "Основание стоимости"];
+  styleHeader(sheet.getRow(11));
+  result.trips.forEach((tripResult, index) => {
+    const row = index + 12;
+    const trip = tripResult.trip;
+    sheet.getRow(row).values = [index + 1, trip.destination, trip.specialists, trip.roundTripFarePerPerson, trip.hotelPerPersonNight, trip.perDiemPerPersonDay, trip.tripDays, trip.hotelNights, tripResult.total, trip.basis];
+    ["D", "E", "F", "I"].forEach((column) => { sheet.getCell(`${column}${row}`).numFmt = rub; });
+  });
+  const totalRow = result.trips.length + 12;
+  sheet.getRow(totalRow).values = ["", "ИТОГО ПО СМЕТНОМУ РАСЧЁТУ", "", "", "", "", "", "", result.total, ""];
+  sheet.getRow(totalRow).font = { bold: true };
+  sheet.getCell(`I${totalRow}`).numFmt = rub;
+  sheet.getCell(`A${totalRow + 2}`).value = "Расходы определяются на момент составления расчёта. Понесённые расходы подтверждаются заверенными копиями финансовых документов.";
+  sheet.mergeCells(`A${totalRow + 2}:J${totalRow + 2}`);
+  sheet.getCell(`A${totalRow + 4}`).value = "Руководитель проектной организации ____________________";
+  sheet.getCell(`A${totalRow + 5}`).value = "Главный инженер проекта ______________________________";
+  sheet.getCell(`F${totalRow + 4}`).value = "Начальник отдела _____________________________________";
+  sheet.getCell(`F${totalRow + 5}`).value = "Заказчик _____________________________________________";
+  setWidths(sheet, [8, 28, 14, 22, 25, 20, 18, 18, 20, 48]);
+
+  const source = workbook.addWorksheet("Основания", { views: [{ showGridLines: false }] });
+  source.getCell("A1").value = "Основания расчёта по форме 4П";
+  styleTitle(source.getCell("A1"));
+  source.mergeCells("A1:C1");
+  source.getRow(3).values = ["Документ", "Положение", "Как применяется"];
+  styleHeader(source.getRow(3));
+  source.addRows([
+    ["Методика № 707/пр", "Пункты 146–149, приложение № 7", "Командировочные расходы рассчитываются отдельно от стоимости проектных работ."],
+    ["Трудовой кодекс РФ", "Статья 168", "Определяет возмещаемые расходы при служебной командировке."],
+    ["Постановление Правительства РФ № 749", "Действующая редакция", "Расходы на проезд и проживание принимаются на момент составления расчёта."],
+    ["Подтверждающие документы", "Счета, билеты, счета-фактуры, чеки", "Копии заверяются уполномоченными лицами проектной организации."],
+    ["Контакты", "OVC.me", "Вопросы по применению калькулятора."],
+  ]);
+  setWidths(source, [38, 42, 82]);
+  finishWorkbook(workbook);
+  const data = await workbook.xlsx.writeBuffer();
+  return data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data);
+}
+
 function addSummaryRows(sheet: ExcelJS.Worksheet, rows: PirSummaryRow[], vatRate: number) {
-  sheet.getRow(11).values = ["№", "Перечень выполняемых работ", "Характеристика", "Ссылка на смету или калькуляцию", "Стоимость без НДС", "НДС", "Полная стоимость"];
+  sheet.getRow(11).values = ["№", "Перечень выполняемых работ", "Характеристика", "Ссылка на смету или калькуляцию", "Стоимость по расчёту", "НДС отдельно", "Итого"];
   styleHeader(sheet.getRow(11));
   rows.forEach((row, index) => {
     const current = index + 12;
@@ -213,10 +265,10 @@ function addSummaryRows(sheet: ExcelJS.Worksheet, rows: PirSummaryRow[], vatRate
     ["E", "F", "G"].forEach((column) => { sheet.getCell(`${column}${current}`).numFmt = rub; });
   });
   const total = rows.length + 12;
-  sheet.getRow(total).values = ["", "ИТОГО ПО СВОДНОЙ СМЕТЕ", "", "", rows.reduce((sum, item) => sum + item.costWithoutVat, 0), rows.reduce((sum, item) => sum + item.vatAmount, 0), rows.reduce((sum, item) => sum + item.costWithVat, 0)];
+  sheet.getRow(total).values = ["", "ИТОГО ПО СВОДУ ПРОЕКТА", "", "", rows.reduce((sum, item) => sum + item.costWithoutVat, 0), rows.reduce((sum, item) => sum + item.vatAmount, 0), rows.reduce((sum, item) => sum + item.costWithVat, 0)];
   sheet.getRow(total).font = { bold: true };
   ["E", "F", "G"].forEach((column) => { sheet.getCell(`${column}${total}`).numFmt = rub; });
-  sheet.getCell(`A${total + 2}`).value = `НДС рассчитан отдельно по ставке ${vatRate * 100}%. Контакты: OVC.me`;
+  sheet.getCell(`A${total + 2}`).value = `Пользовательский свод не является отдельной нормативной формой приложения № 7. НДС по проектным работам рассчитан отдельно по ставке ${vatRate * 100}%; по форме 4П повторно не начисляется. Контакты: OVC.me`;
   sheet.mergeCells(`A${total + 2}:G${total + 2}`);
   sheet.getCell(`A${total + 4}`).value = "Руководитель организации ______________________________";
   sheet.getCell(`A${total + 5}`).value = "Составил ______________________________________________";
@@ -228,18 +280,22 @@ export async function buildPirSummaryWorkbook(
   form2pResult: SbcResult,
   form2pName: string,
   laborInput: PirLaborInput,
+  travelInput: PirTravelInput,
   extras: PirSummaryExtra[],
+  includedRowIds?: string[],
 ): Promise<Uint8Array> {
   const laborResult = calculatePirLabor(laborInput);
-  const rows = buildPirSummaryRows(passport, form2pName, form2pResult.currentPriceWithoutVat, laborResult, extras, laborInput.vatRate);
+  const travelResult = calculatePirTravel(travelInput);
+  const allRows = buildPirSummaryRows(passport, form2pName, form2pResult.currentPriceWithoutVat, laborResult, travelResult, extras, laborInput.vatRate);
+  const rows = includedRowIds ? allRows.filter((row) => includedRowIds.includes(row.id)) : allRows;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "OVC.me";
   workbook.created = new Date();
-  const sheet = workbook.addWorksheet("Форма 1П", { views: [{ showGridLines: false }] });
-  sheet.getCell("A1").value = "Сводная смета на проектные работы (форма 1П)";
+  const sheet = workbook.addWorksheet("Свод проекта", { views: [{ showGridLines: false }] });
+  sheet.getCell("A1").value = "Сводный расчёт стоимости проектных работ";
   styleTitle(sheet.getCell("A1"));
   sheet.mergeCells("A1:G1");
-  addPassport(sheet, passport, "1П");
+  addPassport(sheet, passport, "Пользовательский свод проекта");
   addSummaryRows(sheet, rows, laborInput.vatRate);
   setWidths(sheet, [8, 42, 46, 38, 22, 20, 22]);
   addSourceSheet(workbook, laborInput);
@@ -257,12 +313,18 @@ export async function downloadPirLaborWorkbook(passport: PirEstimatePassport, in
   await download(await buildPirLaborWorkbook(passport, input), `Форма_3П_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
+export async function downloadPirTravelWorkbook(passport: PirEstimatePassport, input: PirTravelInput) {
+  await download(await buildPirTravelWorkbook(passport, input), `Форма_4П_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 export async function downloadPirSummaryWorkbook(
   passport: PirEstimatePassport,
   form2pResult: SbcResult,
   form2pName: string,
   laborInput: PirLaborInput,
+  travelInput: PirTravelInput,
   extras: PirSummaryExtra[],
+  includedRowIds: string[],
 ) {
-  await download(await buildPirSummaryWorkbook(passport, form2pResult, form2pName, laborInput, extras), `Форма_1П_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  await download(await buildPirSummaryWorkbook(passport, form2pResult, form2pName, laborInput, travelInput, extras, includedRowIds), `Свод_проекта_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }

@@ -1479,7 +1479,7 @@ main {
 
 .pir-document-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(138px, 1fr));
+  grid-template-columns: repeat(4, minmax(132px, 1fr));
   gap: 1px;
   overflow: hidden;
   border: 1px solid #d8e1ed;
@@ -1590,6 +1590,19 @@ main {
 .pir-fixed-rules span:last-child { border-right: 0; }
 .pir-fixed-rules b { margin-right: 4px; color: #7f1d1d; font-size: 14px; }
 
+.pir-salary-explanation {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 1px;
+  border-bottom: 1px solid #e4e9ef;
+  background: #e4e9ef;
+}
+.pir-salary-explanation > div { display: grid; gap: 4px; padding: 13px 14px; background: #fbfcfe; }
+.pir-salary-explanation b { color: #344054; font-size: 11px; }
+.pir-salary-explanation span { color: #667085; font-size: 11px; line-height: 1.45; }
+.pir-salary-explanation a { display: grid; min-width: 150px; padding: 13px 15px; place-content: center; color: #8f2330; background: #fff; font-size: 11px; font-weight: 850; text-align: center; }
+.pir-salary-explanation a:hover { background: #fffafa; }
+
 .pir-labor-list-heading {
   display: flex;
   align-items: center;
@@ -1598,6 +1611,8 @@ main {
   padding: 12px 24px;
 }
 .pir-labor-list { display: grid; gap: 14px; padding: 0 24px 24px; }
+.pir-role-note { display: grid; gap: 3px; margin: 0 24px 12px; padding: 11px 13px; border-left: 3px solid #8f2330; color: #667085; background: #fbf8f8; font-size: 11px; line-height: 1.45; }
+.pir-role-note b { color: #5f2630; }
 .pir-labor-work { overflow: hidden; border: 1px solid #d8e1ed; background: #fff; }
 .pir-labor-work-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 16px; border-bottom: 1px solid #e4e9ef; background: #f8fafc; }
 .pir-labor-work-heading h4 { margin: 3px 0 0; color: #172033; font-size: 16px; }
@@ -1620,21 +1635,26 @@ main {
 .pir-labor-table thead th,
 .pir-summary-table thead th { color: #fff; background: #8f2330; font-size: 10px; letter-spacing: 0.03em; text-transform: uppercase; }
 .pir-labor-table thead th:first-child,
-.pir-summary-table thead th:nth-child(2),
 .pir-summary-table thead th:nth-child(3),
-.pir-summary-table thead th:nth-child(4) { text-align: left; }
+.pir-summary-table thead th:nth-child(4),
+.pir-summary-table thead th:nth-child(5) { text-align: left; }
 .pir-labor-table td:first-child { width: 48%; text-align: left; }
 .pir-labor-table input { width: 86px; min-height: 34px; text-align: right; }
 .pir-labor-table select { min-width: 380px; min-height: 34px; }
 .pir-labor-table td small { display: block; color: #667085; font-size: 10px; }
+.pir-labor-table .pir-qualification-note { max-width: 380px; margin-top: 4px; color: #7b8492; line-height: 1.35; }
 .pir-labor-table tfoot th,
 .pir-labor-table tfoot td,
 .pir-summary-table tfoot th,
 .pir-summary-table tfoot td { color: #172033; background: #f8fafc; font-weight: 850; }
 .pir-summary-table tbody th { min-width: 250px; color: #344054; background: #fff; text-align: left; }
 .pir-summary-table tbody th small { display: block; margin-top: 2px; color: #8f2330; font-size: 10px; font-weight: 700; }
-.pir-summary-table tbody td:nth-child(3),
-.pir-summary-table tbody td:nth-child(4) { min-width: 220px; text-align: left; }
+.pir-summary-table tbody td:nth-child(4),
+.pir-summary-table tbody td:nth-child(5) { min-width: 220px; text-align: left; }
+.pir-summary-table tbody tr:not(.is-included) { opacity: 0.62; }
+.pir-summary-table tbody tr.is-included { background: #fffdfd; }
+.pir-summary-check { display: inline-grid; min-width: 40px; min-height: 40px; place-items: center; cursor: pointer; }
+.pir-summary-check input { width: 18px; height: 18px; accent-color: #8f2330; }
 .pir-work-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; }
 .pir-work-warning,
 .pir-work-valid { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 750; }
@@ -1643,6 +1663,22 @@ main {
 .pir-common-warning { display: flex; align-items: center; gap: 8px; margin: 0 24px 18px; padding: 11px 13px; border-left: 3px solid #b7791f; color: #714d13; background: #fffaf0; font-size: 12px; font-weight: 750; }
 .pir-empty-list { display: grid; min-height: 140px; place-content: center; justify-items: center; gap: 5px; color: #667085; text-align: center; }
 .pir-empty-list b { color: #344054; }
+
+.pir-cost-chain {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 1.15fr);
+  gap: 1px;
+  border-bottom: 1px solid #e4e9ef;
+  background: #e4e9ef;
+}
+.pir-cost-chain > div { display: grid; gap: 2px; min-height: 88px; padding: 12px 13px; align-content: center; background: #fbfcfe; }
+.pir-cost-chain small { color: #667085; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.pir-cost-chain b { color: #344054; font-size: 17px; font-variant-numeric: tabular-nums; }
+.pir-cost-chain span { color: #7b8492; font-size: 10px; line-height: 1.35; }
+.pir-cost-chain .pir-cost-chain-total { border-left: 3px solid #8f2330; background: #fbf8f8; }
+.pir-cost-chain .pir-cost-chain-total b { color: #7f1d1d; }
+.pir-travel-chain { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(200px, 1.15fr); }
+.pir-travel-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .pir-form-result { display: grid; grid-template-columns: minmax(240px, 0.7fr) minmax(360px, 1.3fr) auto; align-items: center; gap: 22px; padding: 20px 24px; border-top: 3px solid #8f2330; background: #fbf8f8; }
 .pir-form-result h3 { margin: 3px 0; color: #7f1d1d; font-size: 28px; font-variant-numeric: tabular-nums; }
@@ -1660,6 +1696,8 @@ main {
 @media (max-width: 1000px) {
   .pir-document-switcher { align-items: stretch; flex-direction: column; }
   .pir-document-tabs { width: 100%; }
+  .pir-salary-explanation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pir-cost-chain { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pir-form-result { grid-template-columns: 1fr; }
   .pir-form-result .fgis-export { width: 100%; }
   .pir-manual-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1674,11 +1712,15 @@ main {
   .pir-work-fields,
   .pir-fixed-rules,
   .pir-manual-row { grid-template-columns: 1fr; }
+  .pir-salary-explanation,
+  .pir-cost-chain,
+  .pir-travel-fields { grid-template-columns: 1fr; }
   .pir-span-2 { grid-column: auto; }
   .pir-form-intro { flex-direction: column; padding: 20px 16px; }
   .pir-labor-settings { margin: 14px 12px; }
   .pir-labor-list-heading { align-items: stretch; flex-direction: column; padding: 12px; }
   .pir-labor-list { padding: 0 12px 14px; }
+  .pir-role-note { margin-right: 12px; margin-left: 12px; }
   .pir-labor-work-heading { align-items: flex-start; flex-direction: column; }
   .pir-work-total { width: 100%; grid-template-columns: auto 1fr 34px; }
   .pir-work-total strong { text-align: right; }

@@ -18,9 +18,10 @@ const required = [
   "2 квартал 2026 г.",
   "Методика расчёта и расшифровки",
   "Общая площадь объекта",
-  "Формы 1П, 2П и 3П",
+  "Формы 2П, 3П и 4П",
   "Расчёт стоимости по трудозатратам",
-  "Сводная смета",
+  "Командировочные расходы",
+  "ПОЛЬЗОВАТЕЛЬСКИЙ СВОД ПРОЕКТА",
 ];
 const forbidden = [
   "ПП87.ОКС.13",
@@ -30,6 +31,8 @@ const forbidden = [
   "Подряд",
   "Сохранить шаблон",
   "Директорский портфель",
+  "ФОРМА 1П",
+  "Форма 1П",
 ];
 
 for (const marker of required) {
@@ -37,6 +40,7 @@ for (const marker of required) {
 }
 for (const marker of forbidden) {
   if (javascript.includes(marker)) throw new Error(`Private marker leaked into public PIR bundle: ${marker}`);
+  if (html.includes(marker)) throw new Error(`Forbidden marker leaked into public PIR HTML: ${marker}`);
 }
 if (!html.includes('/pircalc/assets/')) throw new Error("Public PIR base path is not /pircalc/");
 
