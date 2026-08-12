@@ -5,6 +5,7 @@ export interface PirEstimatePassport {
   customer: string;
   designOrganization: string;
   generalDesigner: string;
+  priceLevelQuarter: number;
   priceLevelYear: number;
   estimate2pNumber: string;
   estimate3pNumber: string;
@@ -42,6 +43,8 @@ export interface PirLaborInput {
   ordinaryMonthlySalary: number;
   specialMonthlySalary: number;
   salarySource: string;
+  priceIndex: number;
+  priceIndexSource: string;
   profitabilityRate: number;
   salaryShareInCost: number;
   vatRate: number;
@@ -51,6 +54,7 @@ export interface PirLaborInput {
 export interface PirLaborParticipantResult extends PirLaborParticipant {
   qualification: PirQualification;
   weightedPersonDays: number;
+  qualificationContribution: number;
 }
 
 export interface PirLaborWorkResult {
@@ -62,6 +66,7 @@ export interface PirLaborWorkResult {
   totalHeadcount: number;
   qualificationParticipationCoefficient: number;
   weightedPersonDays: number;
+  baseCostWithoutVat: number;
   costWithoutVat: number;
   vatAmount: number;
   costWithVat: number;
@@ -71,6 +76,8 @@ export interface PirLaborWorkResult {
 
 export interface PirLaborResult {
   works: PirLaborWorkResult[];
+  priceIndex: number;
+  baseTotalWithoutVat: number;
   totalWithoutVat: number;
   vatAmount: number;
   totalWithVat: number;
@@ -93,8 +100,8 @@ export interface PirSummaryRow {
   characteristic: string;
   reference: string;
   costWithoutVat: number;
-  vatAmount: number;
-  costWithVat: number;
+  valid: boolean;
+  warnings: string[];
   source: "2p" | "3p" | "4p" | "manual";
 }
 
@@ -157,6 +164,7 @@ export const DEFAULT_PIR_PASSPORT: PirEstimatePassport = {
   customer: "",
   designOrganization: "",
   generalDesigner: "",
+  priceLevelQuarter: Math.floor(new Date().getMonth() / 3) + 1,
   priceLevelYear: new Date().getFullYear(),
   estimate2pNumber: "1",
   estimate3pNumber: "2",
@@ -208,6 +216,8 @@ export const DEFAULT_PIR_LABOR_INPUT: PirLaborInput = {
   ordinaryMonthlySalary: 0,
   specialMonthlySalary: 0,
   salarySource: "",
+  priceIndex: 1,
+  priceIndexSource: "",
   profitabilityRate: 0.1,
   salaryShareInCost: 0.4,
   vatRate: 0.22,
@@ -241,14 +251,21 @@ export function workKindLabel(kind: PirWorkKind) {
   return "Обычная проектная документация";
 }
 
+function roundTo(value: number, digits: number) {
+  const factor = 10 ** digits;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
 export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
   const workingDays = Math.max(0, input.averageWorkingDaysPerMonth);
   const profitabilityRate = Math.max(0, input.profitabilityRate);
   const salaryShare = Math.max(0, input.salaryShareInCost);
   const vatRate = Math.max(0, input.vatRate);
+  const priceIndex = Math.max(0, input.priceIndex ?? 1);
 
   const works = input.works.map((work): PirLaborWorkResult => {
     const qualifications = qualificationsForWork(work.kind);
+    const plannedDuration = Math.max(0, work.plannedDurationDays);
     const participants = work.participants.map((participant) => {
       const qualification = qualifications.find((item) => item.id === participant.qualificationId)
         ?? qualifications[0];
@@ -260,23 +277,32 @@ export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
         headcount,
         qualification,
         weightedPersonDays: actualDays * headcount * qualification.index,
+        qualificationContribution: plannedDuration > 0
+          ? roundTo((actualDays / plannedDuration) * headcount * qualification.index, 2)
+          : 0,
       };
     });
     const monthlySalary = work.kind === "ordinary"
       ? Math.max(0, input.ordinaryMonthlySalary)
       : Math.max(0, input.specialMonthlySalary);
-    const averageDailySalary = workingDays > 0 ? monthlySalary / workingDays : 0;
+    const averageDailySalary = workingDays > 0 ? roundTo(monthlySalary / workingDays, 2) : 0;
     const averageDailyOutput = salaryShare > 0
-      ? averageDailySalary * (1 + profitabilityRate) / salaryShare
+      ? roundTo(averageDailySalary * (1 + profitabilityRate) / salaryShare, 2)
       : 0;
     const totalHeadcount = participants.reduce((sum, item) => sum + item.headcount, 0);
     const weightedPersonDays = participants.reduce((sum, item) => sum + item.weightedPersonDays, 0);
-    const plannedDuration = Math.max(0, work.plannedDurationDays);
+    const qualificationContributionTotal = roundTo(
+      participants.reduce((sum, item) => sum + item.qualificationContribution, 0),
+      2,
+    );
     const qualificationParticipationCoefficient = plannedDuration > 0 && totalHeadcount > 0
-      ? weightedPersonDays / (plannedDuration * totalHeadcount)
+      ? roundTo(qualificationContributionTotal / totalHeadcount, 3)
       : 0;
-    const costWithoutVat = averageDailyOutput * plannedDuration * totalHeadcount
-      * qualificationParticipationCoefficient;
+    const baseCostWithoutVat = roundTo(
+      averageDailyOutput * plannedDuration * totalHeadcount * qualificationParticipationCoefficient,
+      2,
+    );
+    const costWithoutVat = roundTo(baseCostWithoutVat * priceIndex, 2);
     const vatAmount = costWithoutVat * vatRate;
     const warnings: string[] = [];
     if (!work.name.trim()) warnings.push("Укажите наименование работы.");
@@ -285,6 +311,9 @@ export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
     if (workingDays <= 0) warnings.push("Укажите среднее число рабочих дней в месяце.");
     if (plannedDuration <= 0) warnings.push("Укажите плановую продолжительность.");
     if (participants.length === 0 || weightedPersonDays <= 0) warnings.push("Добавьте исполнителей и дни участия.");
+    if (plannedDuration > 0 && participants.some((item) => item.actualDays > plannedDuration)) {
+      warnings.push("Время участия исполнителя не может превышать плановую продолжительность работы.");
+    }
 
     return {
       work,
@@ -295,6 +324,7 @@ export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
       totalHeadcount,
       qualificationParticipationCoefficient,
       weightedPersonDays,
+      baseCostWithoutVat,
       costWithoutVat,
       vatAmount,
       costWithVat: costWithoutVat + vatAmount,
@@ -303,13 +333,18 @@ export function calculatePirLabor(input: PirLaborInput): PirLaborResult {
     };
   });
 
-  const totalWithoutVat = works.reduce((sum, item) => sum + item.costWithoutVat, 0);
+  const baseTotalWithoutVat = roundTo(works.reduce((sum, item) => sum + item.baseCostWithoutVat, 0), 2);
+  const totalWithoutVat = roundTo(works.reduce((sum, item) => sum + item.costWithoutVat, 0), 2);
   const vatAmount = totalWithoutVat * vatRate;
   const warnings: string[] = [];
   if (!input.salarySource.trim()) warnings.push("Укажите источник данных Росстата о средней зарплате.");
   if (input.sourceYear <= 0) warnings.push("Укажите год данных о средней зарплате.");
+  if (priceIndex <= 0) warnings.push("Укажите индекс пересчёта стоимости проектных работ.");
+  if (!(input.priceIndexSource ?? "").trim()) warnings.push("Укажите источник индекса пересчёта.");
   return {
     works,
+    priceIndex,
+    baseTotalWithoutVat,
     totalWithoutVat,
     vatAmount,
     totalWithVat: totalWithoutVat + vatAmount,
@@ -348,19 +383,19 @@ export function buildPirSummaryRows(
   travelResult: PirTravelResult | undefined,
   extras: PirSummaryExtra[],
   vatRate: number,
+  form2pDetails?: { basis?: string; calculation?: string },
 ): PirSummaryRow[] {
   const rows: PirSummaryRow[] = [];
-  const safeVat = Math.max(0, vatRate);
+  void vatRate;
   if (form2pCostWithoutVat > 0) {
-    const vatAmount = form2pCostWithoutVat * safeVat;
     rows.push({
       id: "form-2p",
-      name: "Проектные работы по нормативу",
-      characteristic: form2pName || passport.constructionName || "Нормативный расчёт",
-      reference: `Смета № ${passport.estimate2pNumber || "—"} по форме 2П`,
+      name: form2pName || passport.constructionName || "Проектные работы по нормативу",
+      characteristic: form2pDetails?.basis || "НЗ № 848/пр, выбранные таблица и пункт по данным ФГИС ЦС",
+      reference: form2pDetails?.calculation || "Расчёт по выбранному нормативу и индексу текущего периода",
       costWithoutVat: form2pCostWithoutVat,
-      vatAmount,
-      costWithVat: form2pCostWithoutVat + vatAmount,
+      valid: true,
+      warnings: [],
       source: "2p",
     });
   }
@@ -369,11 +404,11 @@ export function buildPirSummaryRows(
     rows.push({
       id: `form-3p-${item.work.id}`,
       name: item.work.name || `Работа ${index + 1}`,
-      characteristic: `${item.work.stage}; ${workKindLabel(item.work.kind)}`,
-      reference: `Калькуляция № ${passport.estimate3pNumber || "—"}.${index + 1} по форме 3П`,
+      characteristic: `Пункт 143 «б», пункт 145 Методики № 707/пр; калькуляция № ${passport.estimate3pNumber || "—"}.${index + 1} по форме 3П`,
+      reference: `${item.baseCostWithoutVat.toFixed(2)} × ${laborResult.priceIndex.toFixed(3)} = ${item.costWithoutVat.toFixed(2)} руб.; ${item.work.stage}, ${workKindLabel(item.work.kind)}`,
       costWithoutVat: item.costWithoutVat,
-      vatAmount: item.vatAmount,
-      costWithVat: item.costWithVat,
+      valid: item.valid && laborResult.warnings.length === 0,
+      warnings: [...laborResult.warnings, ...item.warnings],
       source: "3p",
     });
   });
@@ -382,21 +417,20 @@ export function buildPirSummaryRows(
       id: "form-4p",
       name: "Командировочные расходы",
       characteristic: russianTripCount(travelResult.trips.filter((item) => item.total > 0).length),
-      reference: `Сметный расчёт № ${passport.estimate4pNumber || "—"} по форме 4П`,
+      reference: `Пункты 146–149 Методики № 707/пр; сметный расчёт № ${passport.estimate4pNumber || "—"} по форме 4П`,
       costWithoutVat: travelResult.total,
-      vatAmount: 0,
-      costWithVat: travelResult.total,
+      valid: travelResult.warningCount === 0,
+      warnings: travelResult.trips.flatMap((item) => item.warnings),
       source: "4p",
     });
   }
   extras.forEach((item) => {
     const costWithoutVat = Math.max(0, item.costWithoutVat);
-    const vatAmount = costWithoutVat * safeVat;
     rows.push({
       ...item,
       costWithoutVat,
-      vatAmount,
-      costWithVat: costWithoutVat + vatAmount,
+      valid: Boolean(item.name.trim() && item.characteristic.trim() && item.reference.trim() && costWithoutVat > 0),
+      warnings: [],
       source: "manual",
     });
   });

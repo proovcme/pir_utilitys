@@ -145,7 +145,7 @@ export function PublicPirApp() {
     setPassport((current) => ({ ...current, ...patch }));
   }, []);
 
-  const export2p = useCallback(async () => {
+  const exportNormativeCalculation = useCallback(async () => {
     setExporting(true);
     try {
       const { downloadPublicPirWorkbook } = await import("./services/publicPirExcel");
@@ -154,6 +154,25 @@ export function PublicPirApp() {
       setExporting(false);
     }
   }, [passport, project, result]);
+
+  const export2p = useCallback(async () => {
+    setExporting(true);
+    try {
+      const { downloadPirSummaryWorkbook } = await import("./services/pirFormsExcel");
+      await downloadPirSummaryWorkbook(
+        passport,
+        result,
+        result.officialBreakdown?.objectName ?? project.sbcFgisObjectName ?? "Нормативный расчёт",
+        labor,
+        travel,
+        summaryExtras,
+        summaryIncludedIds,
+        true,
+      );
+    } finally {
+      setExporting(false);
+    }
+  }, [labor, passport, project.sbcFgisObjectName, result, summaryExtras, summaryIncludedIds, travel]);
 
   const export3p = useCallback(async () => {
     setExporting(true);
@@ -211,13 +230,13 @@ export function PublicPirApp() {
           <div>
             <span className="fgis-kicker">РАСЧЁТ СТОИМОСТИ ПРОЕКТНЫХ РАБОТ</span>
             <h1>Формы 2П, 3П и 4П</h1>
-            <p>Каждая работа рассчитывается одним способом. Отдельные результаты можно собрать в пользовательский свод проекта.</p>
+            <p>Сначала рассчитайте стоимость нормативом или по трудозатратам, затем включите нужные строки в смету 2П.</p>
           </div>
           <div className="pir-document-tabs" role="tablist">
-            <button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><ClipboardList size={18} /><span><b>Свод проекта</b><small>Выбранные расчёты</small></span></button>
-            <button className={mode === "2p" ? "active" : ""} onClick={() => setMode("2p")}><FileSpreadsheet size={18} /><span><b>2П</b><small>По нормативу</small></span></button>
+            <button className={mode === "2p" ? "active" : ""} onClick={() => setMode("2p")}><FileSpreadsheet size={18} /><span><b>2П</b><small>Итоговая смета</small></span></button>
             <button className={mode === "3p" ? "active" : ""} onClick={() => setMode("3p")}><Users size={18} /><span><b>3П</b><small>По трудозатратам</small></span></button>
             <button className={mode === "4p" ? "active" : ""} onClick={() => setMode("4p")}><Plane size={18} /><span><b>4П</b><small>Командировки</small></span></button>
+            <button className={mode === "summary" ? "active" : ""} onClick={() => setMode("summary")}><ClipboardList size={18} /><span><b>Свод</b><small>Рабочая ведомость</small></span></button>
           </div>
         </section>
 
@@ -225,8 +244,9 @@ export function PublicPirApp() {
 
         {mode === "2p" ? (
           <div className="pir-form-panel">
-            <div className="pir-current-form"><span>Форма 2П</span><b>Смета на основные, дополнительные и сопутствующие проектные работы</b></div>
-            <FgisPirCalculator project={project} result={result} draftResult={draftResult} onChange={patchProject} onExport={export2p} exporting={exporting} fixedNormGuid="b90117ab-5223-4a7a-89ae-a8bcbb88f689" />
+            <div className="pir-current-form"><span>Источник строки 2П</span><b>Нормативный расчёт по данным ФГИС ЦС</b></div>
+            <FgisPirCalculator project={project} result={result} draftResult={draftResult} onChange={patchProject} onExport={exportNormativeCalculation} exporting={exporting} fixedNormGuid="b90117ab-5223-4a7a-89ae-a8bcbb88f689" />
+            <PirSummary passport={passport} form2pResult={result} form2pName={result.officialBreakdown?.objectName ?? project.sbcFgisObjectName ?? ""} laborInput={labor} travelInput={travel} extras={summaryExtras} onExtrasChange={setSummaryExtras} includedRowIds={summaryIncludedIds} onIncludedRowIdsChange={setSummaryIncludedIds} exporting={exporting} onExport={export2p} official />
           </div>
         ) : null}
         {mode === "3p" ? <PirLaborCalculator input={labor} onChange={setLabor} exporting={exporting} onExport={export3p} /> : null}
