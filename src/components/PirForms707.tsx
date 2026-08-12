@@ -46,7 +46,7 @@ export function PirPassportFields({
     <details className="pir-passport-editor" open>
       <summary>
         <span>Данные для печатных форм</span>
-        <small>Общие для 2П, 3П, 4П и свода проекта</small>
+        <small>Общие для 2П, 3П и 4П</small>
       </summary>
       <div className="pir-passport-grid">
         <label className="field pir-span-2">
