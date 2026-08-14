@@ -6,7 +6,7 @@
     {
       "id": "stamp-surnames",
       "name": "Фамилии по строкам дат 2022-2023",
-      "enabled": true,
+      "enabled": false,
       "selector": {
         "pages": "all",
         "orientation": "any",
@@ -47,7 +47,7 @@
     {
       "id": "stamp-organization",
       "name": "Организация в основной надписи",
-      "enabled": true,
+      "enabled": false,
       "selector": {
         "pages": "all",
         "orientation": "any",
@@ -88,7 +88,7 @@
     {
       "id": "note-tch",
       "name": "Красная пометка — ТЧ",
-      "enabled": true,
+      "enabled": false,
       "selector": {
         "pages": "all",
         "orientation": "portrait",
@@ -125,7 +125,7 @@
     {
       "id": "note-gch",
       "name": "Красная пометка — ГЧ",
-      "enabled": true,
+      "enabled": false,
       "selector": {
         "pages": "all",
         "orientation": "landscape",

@@ -11,16 +11,19 @@ const state = {
   outputDir: "",
   makePreviews: true,
   rules: clone(profile.rules),
-  selected: 0,
-  screen: "stamp",
+  pageOperations: [],
+  selected: Math.max(0, profile.rules.findIndex((rule) => rule.id === "document-text")),
+  screen: "content",
   inspection: null,
+  contentInspection: null,
   inspecting: false,
+  inspectingContent: false,
   running: false,
   progress: null,
   previewPages: [],
   previewModalOpen: false,
   selectedPreviewPage: 1,
-  message: "Выберите исходный PDF. Типовые настройки СПДС уже подготовлены.",
+  message: "Выберите один PDF или комплект документов, затем добавьте нужные операции.",
   messageType: "info",
 };
 
@@ -45,15 +48,16 @@ function render() {
   app.innerHTML = `
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark">СПДС</div>
+        <div class="brand-mark">PDF</div>
         <div>
-          <h1>Переоформление штампов ПД</h1>
-          <p>Автоматизированная обработка PDF по ГОСТ Р 21.101</p>
+          <h1>Редактор проектной документации</h1>
+          <p>Поиск, замена и сборка PDF-комплектов</p>
         </div>
       </div>
       <nav class="tabs">
+        <button data-screen="content" class="${state.screen === "content" ? "active" : ""}">Содержимое</button>
+        <button data-screen="pages" class="${state.screen === "pages" ? "active" : ""}">Страницы</button>
         <button data-screen="stamp" class="${state.screen === "stamp" ? "active" : ""}">Штамп СПДС</button>
-        <button data-screen="rules" class="${state.screen === "rules" ? "active" : ""}">Конструктор правил</button>
       </nav>
       <div class="profile-menu">
         <button id="apply-preset-tz" class="preset-btn" title="Загрузить параметры базового задания">⚡ Базовое задание</button>
@@ -64,16 +68,64 @@ function render() {
 
     <main>
       ${renderFiles()}
-      ${state.screen === "stamp" ? renderQuick() : renderRules()}
+      ${state.screen === "stamp" ? renderQuick() : state.screen === "pages" ? renderPages() : renderRules()}
       ${renderFooter()}
     </main>
     ${renderPreviewModal()}`;
   bindEvents();
 }
 
+function renderPages() {
+  return `
+    <section class="step-card">
+      <div class="step-heading">
+        <span class="step-num">2</span>
+        <div>
+          <h2>Операции со страницами</h2>
+          <p>Операции выполняются сверху вниз. Номера относятся к состоянию документа на текущем шаге.</p>
+        </div>
+        <button id="add-page-operation" class="secondary-btn heading-action">+ Добавить операцию</button>
+      </div>
+      <div class="operation-list">
+        ${state.pageOperations.length ? state.pageOperations.map((operation, index) => renderPageOperation(operation, index)).join("") : `
+          <div class="empty-operations">
+            <strong>Список операций пока пуст</strong>
+            <span>Можно удалить, извлечь, повернуть, оставить, дублировать или добавить страницы из другого PDF.</span>
+          </div>`}
+      </div>
+    </section>`;
+}
+
+function renderPageOperation(operation, index) {
+  const needsPages = operation.type !== "insert_pdf";
+  return `
+    <article class="page-operation">
+      <span class="operation-order">${index + 1}</span>
+      <div class="operation-fields">
+        ${field("Действие", select(`pageop.${index}.type`, operation.type, [
+          ["delete", "Удалить страницы"],
+          ["extract", "Извлечь в отдельный PDF"],
+          ["rotate", "Повернуть страницы"],
+          ["keep", "Оставить только выбранные"],
+          ["duplicate", "Дублировать страницы в конец"],
+          ["insert_pdf", "Добавить страницы из другого PDF"],
+        ]))}
+        ${needsPages ? field("Страницы", input(`pageop.${index}.pages`, operation.pages || ""), "Например: 1, 3-7, 12") : ""}
+        ${operation.type === "rotate" ? field("Поворот", select(`pageop.${index}.angle`, operation.angle || 90, [[90, "90° по часовой"], [180, "180°"], [270, "90° против часовой"]])) : ""}
+        ${operation.type === "extract" ? field("Имя результата", input(`pageop.${index}.suffix`, operation.suffix || "извлечено"), "Будет создан отдельный PDF рядом с результатом") : ""}
+        ${operation.type === "insert_pdf" ? `
+          ${field("Другой PDF", `<div class="font-file"><input value="${esc(operation.source_pdf || "Не выбран")}" readonly><button data-pick-insert="${index}">Выбрать…</button></div>`)}
+          ${field("Страницы из него", input(`pageop.${index}.pages`, operation.pages || "all"), "all или, например, 2-5")}
+          ${field("Куда вставить", input(`pageop.${index}.position`, operation.position || "end"), "end или номер позиции")}
+        ` : ""}
+      </div>
+      <button class="remove-operation" data-remove-page-operation="${index}" title="Удалить операцию">×</button>
+    </article>`;
+}
+
 function renderFiles() {
   const packageLabel = state.inputs.length > 1 ? `${state.inputs.length} PDF файлов в пакете` : state.input ? shortPath(state.input) : "Нажмите для выбора PDF…";
-  const outputLabel = state.inputs.length > 1 ? (state.outputDir ? shortPath(state.outputDir) : "Выберите папку для сохранения…") : (state.output ? shortPath(state.output) : "Куда сохранить переоформленный PDF…");
+  const outputLabel = state.inputs.length > 1 ? (state.outputDir ? shortPath(state.outputDir) : "Выберите папку для сохранения…") : (state.output ? shortPath(state.output) : "Куда сохранить изменённый PDF…");
   return `
     <section class="step-card files-card">
       <div class="step-heading">
@@ -239,8 +291,8 @@ function renderRules() {
       <aside class="rules-list step-card">
         <div class="rules-title">
           <div>
-            <h2>Список правил</h2>
-            <p>Настройка зон поиска и параметров замены</p>
+            <h2>Операции с содержимым</h2>
+            <p>Что найти, где и как изменить</p>
           </div>
           <button id="add-rule" class="secondary-btn">+ Добавить</button>
         </div>
@@ -273,7 +325,10 @@ function renderEditor(rule) {
         ${input("name", rule.name, "text", 'class="rule-name"')}
         <p>${humanSummary(rule)}</p>
       </div>
-      <label class="plain-check"><input data-bind="enabled" type="checkbox" ${rule.enabled ? "checked" : ""}> Включено</label>
+      <div class="editor-actions">
+        <button id="inspect-rule" class="secondary-btn" ${!state.input || state.inspectingContent ? "disabled" : ""}>${state.inspectingContent ? "Поиск…" : "Найти в документе"}</button>
+        <label class="plain-check"><input data-bind="enabled" type="checkbox" ${rule.enabled ? "checked" : ""}> Включено</label>
+      </div>
     </div>
     <div class="plain-language">
       <section>
@@ -323,7 +378,27 @@ function renderEditor(rule) {
           <label class="plain-check"><input data-bind="action.style.auto_fit" type="checkbox" ${style.auto_fit ? "checked" : ""}> Автоподбор кегля</label>
         </fieldset>
       </div>
-    </details>`;
+    </details>
+    ${renderContentInspection()}`;
+}
+
+function renderContentInspection() {
+  const result = state.contentInspection;
+  if (!result) return `<div class="match-placeholder">Настройте правило и нажмите «Найти в документе», чтобы проверить совпадения до обработки.</div>`;
+  if (!result.count) return `<div class="match-placeholder warning-box"><strong>Совпадений не найдено</strong><span>Проверьте текст, диапазон страниц и область поиска.</span></div>`;
+  const sample = result.sample;
+  return `
+    <section class="match-results">
+      <div class="match-summary">
+        <strong>Найдено: ${result.count}${result.truncated ? "+" : ""}</strong>
+        <span>Страницы: ${result.pages.slice(0, 30).join(", ")}${result.pages.length > 30 ? "…" : ""}</span>
+      </div>
+      ${sample ? `<div class="match-preview">
+        <img src="data:image/png;base64,${sample.image}" alt="Совпадения на странице ${sample.page}">
+        ${sample.markers.map((marker) => `<i style="left:${marker.x}%;top:${marker.y}%;width:${Math.max(marker.width, 0.8)}%;height:${Math.max(marker.height, 0.8)}%"></i>`).join("")}
+        <b>Страница ${sample.page}</b>
+      </div>` : ""}
+    </section>`;
 }
 
 function renderFooter() {
@@ -339,7 +414,7 @@ function renderFooter() {
       <div class="footer-actions">
         <label class="plain-check"><input id="previews" type="checkbox" ${state.makePreviews ? "checked" : ""}> Создать PNG-превью</label>
         ${state.previewPages.length > 0 ? `<button id="open-previews-btn" class="secondary-btn">🔍 Просмотр страниц (${state.previewPages.length})</button>` : ""}
-        <button id="run" class="primary" ${state.running ? "disabled" : ""}>${state.running ? "Обработка…" : "🚀 Обработать PDF"}</button>
+        <button id="run" class="primary" ${state.running ? "disabled" : ""}>${state.running ? "Обработка…" : "Выполнить операции"}</button>
       </div>
     </section>`;
 }
@@ -351,7 +426,7 @@ function renderPreviewModal() {
     <div class="modal-overlay">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>Просмотр переоформленных страниц (Лист ${currentPage.page} из ${state.previewPages.length})</h3>
+          <h3>Просмотр результата (лист ${currentPage.page} из ${state.previewPages.length})</h3>
           <button id="close-modal-btn" class="close-btn">✕</button>
         </div>
         <div class="modal-body">
@@ -416,7 +491,7 @@ function applyPresetTZ() {
 
 function bindEvents() {
   document.querySelectorAll("[data-screen]").forEach((button) => button.onclick = () => { state.screen = button.dataset.screen; render(); });
-  document.querySelectorAll("[data-rule]").forEach((button) => button.onclick = () => { state.selected = Number(button.dataset.rule); render(); });
+  document.querySelectorAll("[data-rule]").forEach((button) => button.onclick = () => { state.selected = Number(button.dataset.rule); state.contentInspection = null; render(); });
   document.querySelector("#apply-preset-tz")?.addEventListener("click", applyPresetTZ);
   document.querySelectorAll("[data-detected-name]").forEach((button) => button.onclick = () => {
     const rule = ruleById("stamp-surnames");
@@ -444,11 +519,18 @@ function bindEvents() {
   document.querySelector("#pick-rule-image")?.addEventListener("click", () => chooseImage(selectedRule()));
   document.querySelector("#previews")?.addEventListener("change", (event) => state.makePreviews = event.target.checked);
   document.querySelector("#run")?.addEventListener("click", runEngine);
+  document.querySelector("#inspect-rule")?.addEventListener("click", inspectSelectedRule);
   document.querySelector("#import-profile")?.addEventListener("click", importProfile);
   document.querySelector("#export-profile")?.addEventListener("click", exportProfile);
   document.querySelector("#add-rule")?.addEventListener("click", addRule);
   document.querySelector("#duplicate-rule")?.addEventListener("click", duplicateRule);
   document.querySelector("#delete-rule")?.addEventListener("click", deleteRule);
+  document.querySelector("#add-page-operation")?.addEventListener("click", addPageOperation);
+  document.querySelectorAll("[data-remove-page-operation]").forEach((button) => button.onclick = () => {
+    state.pageOperations.splice(Number(button.dataset.removePageOperation), 1);
+    render();
+  });
+  document.querySelectorAll("[data-pick-insert]").forEach((button) => button.onclick = () => chooseInsertPdf(Number(button.dataset.pickInsert)));
   document.querySelector("#open-previews-btn")?.addEventListener("click", () => { state.previewModalOpen = true; render(); });
   document.querySelector("#close-modal-btn")?.addEventListener("click", () => { state.previewModalOpen = false; render(); });
   document.querySelectorAll("[data-page]").forEach((btn) => btn.onclick = () => { state.selectedPreviewPage = Number(btn.dataset.page); render(); });
@@ -458,6 +540,12 @@ function updateBinding(element) {
   let value = element.type === "checkbox" ? element.checked : element.value;
   if (element.type === "number") value = Number(value);
   const bind = element.dataset.bind;
+  if (bind?.startsWith("pageop.")) {
+    const [, indexText, property] = bind.split(".");
+    state.pageOperations[Number(indexText)][property] = value;
+    if (property === "type") render();
+    return;
+  }
   if (bind === "quick.surnameMode") {
     const surnameRule = ruleById("stamp-surnames");
     if (value === "all") surnameRule.match.text = "";
@@ -504,7 +592,32 @@ function updateBinding(element) {
   } else if (bind) {
     if (bind === "match.years") value = String(value).split(",").map((item) => Number(item.trim())).filter(Boolean);
     setPath(selectedRule(), bind, value);
+    state.contentInspection = null;
     if (element.tagName === "SELECT" && ["match.type", "action.type"].includes(bind)) render();
+  }
+}
+
+async function inspectSelectedRule() {
+  if (!state.input || !selectedRule()) return;
+  state.inspectingContent = true;
+  state.contentInspection = null;
+  state.message = "Ищу совпадения без изменения документа…";
+  state.messageType = "info";
+  render();
+  try {
+    const request = { input_pdf: state.input, rule: selectedRule() };
+    const output = await invoke("run_engine", { args: ["--inspect-rule-json", JSON.stringify(request)] });
+    const result = JSON.parse(output.stdout.trim().split(/\r?\n/).at(-1) || output.stderr);
+    if (!result.ok) throw new Error(result.error || "Не удалось выполнить поиск");
+    state.contentInspection = result;
+    state.message = result.count ? `Найдено совпадений: ${result.count}. Проверьте выделение и включите правило.` : "Совпадений не найдено. Измените условия поиска.";
+    state.messageType = result.count ? "success" : "warning";
+  } catch (error) {
+    state.message = `Ошибка поиска: ${error.message || error}`;
+    state.messageType = "error";
+  } finally {
+    state.inspectingContent = false;
+    render();
   }
 }
 
@@ -513,28 +626,41 @@ async function chooseInput() {
   if (selected) {
     state.inputs = Array.isArray(selected) ? selected : [selected];
     state.input = state.inputs[0];
-    state.output = state.input.replace(/\.pdf$/i, "_переоформлен.pdf");
+    state.output = state.input.replace(/\.pdf$/i, "_изменён.pdf");
     state.outputDir = state.inputs.length > 1 ? parentPath(state.input) : "";
-    state.screen = "stamp";
+    state.screen = "content";
     await inspectInput();
+  }
+}
+
+function addPageOperation() {
+  state.pageOperations.push({ id: `page-operation-${Date.now()}`, type: "delete", pages: "", angle: 90, suffix: "извлечено", source_pdf: "", position: "end" });
+  render();
+}
+
+async function chooseInsertPdf(index) {
+  const path = await open({ multiple: false, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (path) {
+    state.pageOperations[index].source_pdf = path;
+    render();
   }
 }
 
 async function inspectInput() {
   state.inspecting = true;
   state.inspection = null;
-  state.message = "Распознавание штампа и полей…";
+  state.message = "Анализ структуры документа…";
   state.messageType = "info";
   render();
   try {
     const output = await invoke("run_engine", { args: ["--inspect-json", JSON.stringify({ input_pdf: state.input })] });
     const result = JSON.parse(output.stdout.trim().split(/\r?\n/).at(-1) || output.stderr);
-    if (!result.ok) throw new Error(result.error || "Не удалось распознать штамп");
+    if (!result.ok) throw new Error(result.error || "Не удалось проанализировать документ");
     state.inspection = result;
-    state.message = `Штамп найден на ${result.detected_stamp_pages.length} страницах. Нажмите «Обработать PDF».`;
+    state.message = `Проанализировано ${result.page_count} страниц; штамп найден на ${result.detected_stamp_pages.length}. Выберите операции.`;
     state.messageType = result.sample ? "success" : "warning";
   } catch (error) {
-    state.message = `Ошибка распознавания: ${error.message || error}`;
+    state.message = `Ошибка анализа: ${error.message || error}`;
     state.messageType = "error";
   } finally {
     state.inspecting = false;
@@ -589,9 +715,9 @@ function deleteRule() {
 }
 
 async function exportProfile() {
-  const path = await save({ defaultPath: "профиль-штампов.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+  const path = await save({ defaultPath: "профиль-обработки.json", filters: [{ name: "JSON", extensions: ["json"] }] });
   if (!path) return;
-  await invoke("write_text_file", { path, contents: JSON.stringify({ name: "Профиль СПДС", version: "0.0.1", rules: state.rules }, null, 2) });
+  await invoke("write_text_file", { path, contents: JSON.stringify({ name: "Профиль обработки PDF", version: "0.0.1", rules: state.rules, page_operations: state.pageOperations }, null, 2) });
   state.message = `Профиль сохранён: ${path}`;
   state.messageType = "success";
   render();
@@ -604,6 +730,7 @@ async function importProfile() {
     const data = JSON.parse(await invoke("read_text_file", { path }));
     if (!Array.isArray(data.rules)) throw new Error("В файле отсутствует список rules");
     state.rules = data.rules;
+    state.pageOperations = Array.isArray(data.page_operations) ? data.page_operations : [];
     for (const builtin of profile.rules) {
       if (!state.rules.some((rule) => rule.id === builtin.id)) state.rules.push(clone(builtin));
     }
@@ -624,8 +751,8 @@ async function runEngine() {
     render();
     return;
   }
-  if (!state.rules.some((rule) => rule.enabled)) {
-    state.message = "Включите хотя бы одно правило переоформления.";
+  if (!state.rules.some((rule) => rule.enabled) && !state.pageOperations.length) {
+    state.message = "Добавьте хотя бы одну операцию с содержимым или страницами.";
     state.messageType = "error";
     render();
     return;
@@ -637,11 +764,11 @@ async function runEngine() {
 
   for (let index = 0; index < state.inputs.length; index++) {
     const inputPdf = state.inputs[index];
-    const outputPdf = state.inputs.length === 1 ? state.output : joinPath(state.outputDir, `${baseName(inputPdf)}_переоформлен.pdf`);
+    const outputPdf = state.inputs.length === 1 ? state.output : joinPath(state.outputDir, `${baseName(inputPdf)}_изменён.pdf`);
     state.message = `Обработка ${index + 1} из ${state.inputs.length}: ${shortPath(inputPdf)}`;
     render();
     try {
-      const job = { input_pdf: inputPdf, output_pdf: outputPdf, make_previews: state.makePreviews, rules: state.rules };
+      const job = { input_pdf: inputPdf, output_pdf: outputPdf, make_previews: state.makePreviews, rules: state.rules, page_operations: state.pageOperations };
       const output = await invoke("run_engine", { args: ["--job-json", JSON.stringify(job)] });
       const result = JSON.parse(output.stdout.trim().split(/\r?\n/).at(-1) || output.stderr);
       if (!result.ok) throw new Error(result.error || "Ошибка при выполнении движка");

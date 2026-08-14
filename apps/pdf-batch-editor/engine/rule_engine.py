@@ -69,6 +69,97 @@ def parse_pages(value: str, count: int) -> set[int]:
     return pages
 
 
+def apply_page_operations(
+    document: pymupdf.Document,
+    operations: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Apply structural operations in order and defer extracts until content edits are complete."""
+    completed: list[dict[str, Any]] = []
+    extracts: list[dict[str, Any]] = []
+    for index, operation in enumerate(operations, start=1):
+        operation_type = str(operation.get("type", "")).strip()
+        if not operation_type:
+            continue
+        if operation_type == "extract":
+            extracts.append(operation)
+            continue
+        before = len(document)
+        pages = sorted(parse_pages(operation.get("pages", "all"), before)) if operation_type != "insert_pdf" else []
+        if operation_type == "delete":
+            if not pages:
+                raise ValueError(f"Операция {index}: не указаны страницы для удаления")
+            if len(pages) >= before:
+                raise ValueError(f"Операция {index}: нельзя удалить все страницы документа")
+            for page_number in reversed(pages):
+                document.delete_page(page_number - 1)
+        elif operation_type == "keep":
+            if not pages:
+                raise ValueError(f"Операция {index}: не указаны страницы, которые нужно оставить")
+            document.select([page_number - 1 for page_number in pages])
+        elif operation_type == "rotate":
+            angle = int(operation.get("angle", 90))
+            if angle not in {90, 180, 270}:
+                raise ValueError(f"Операция {index}: поворот должен быть 90, 180 или 270 градусов")
+            for page_number in pages:
+                page = document[page_number - 1]
+                page.set_rotation((page.rotation + angle) % 360)
+        elif operation_type == "duplicate":
+            if not pages:
+                raise ValueError(f"Операция {index}: не указаны страницы для дублирования")
+            for page_number in pages:
+                document.copy_page(page_number - 1)
+        elif operation_type == "insert_pdf":
+            source_path = Path(str(operation.get("source_pdf", ""))).resolve()
+            if not source_path.exists():
+                raise FileNotFoundError(f"Операция {index}: не найден добавляемый PDF: {source_path}")
+            source = pymupdf.open(source_path)
+            try:
+                source_pages = sorted(parse_pages(operation.get("pages", "all"), len(source)))
+                if not source_pages:
+                    raise ValueError(f"Операция {index}: в добавляемом PDF не выбраны страницы")
+                position_value = str(operation.get("position", "end")).strip().casefold()
+                insertion_index = -1 if position_value in {"end", "конец", ""} else max(0, min(len(document), int(position_value) - 1))
+                for source_page in source_pages:
+                    document.insert_pdf(source, from_page=source_page - 1, to_page=source_page - 1, start_at=insertion_index)
+                    if insertion_index >= 0:
+                        insertion_index += 1
+            finally:
+                source.close()
+        else:
+            raise ValueError(f"Операция {index}: неизвестное действие со страницами: {operation_type}")
+        completed.append({
+            "index": index,
+            "type": operation_type,
+            "pages": pages,
+            "page_count_before": before,
+            "page_count_after": len(document),
+        })
+    return completed, extracts
+
+
+def save_extracts(
+    document: pymupdf.Document,
+    operations: list[dict[str, Any]],
+    output_pdf: Path,
+) -> list[str]:
+    paths: list[str] = []
+    for index, operation in enumerate(operations, start=1):
+        pages = sorted(parse_pages(operation.get("pages", "all"), len(document)))
+        if not pages:
+            raise ValueError("Не указаны страницы для извлечения")
+        suffix = re.sub(r"[^0-9A-Za-zА-Яа-яЁё_-]+", "-", str(operation.get("suffix", "извлечено"))).strip("-") or "извлечено"
+        target = output_pdf.with_name(f"{output_pdf.stem}_{suffix}{f'-{index}' if index > 1 else ''}.pdf")
+        extracted = pymupdf.open()
+        try:
+            for page_number in pages:
+                extracted.insert_pdf(document, from_page=page_number - 1, to_page=page_number - 1)
+            extracted.save(target, garbage=4, deflate=True)
+        finally:
+            extracted.close()
+        paths.append(str(target))
+    return paths
+
+
 def spds_region(page: pymupdf.Page) -> pymupdf.Rect:
     right = page.rect.width - 5 * MM
     bottom = page.rect.height - 5 * MM
@@ -429,6 +520,48 @@ def inspect_stamp(input_pdf: str) -> dict[str, Any]:
     }
 
 
+def inspect_rule(input_pdf: str, rule: dict[str, Any]) -> dict[str, Any]:
+    """Find rule matches without modifying the PDF and return one visual sample."""
+    document = pymupdf.open(Path(input_pdf).resolve())
+    items: list[dict[str, Any]] = []
+    total_count = 0
+    sample_page_number: int | None = None
+    sample_rects: list[pymupdf.Rect] = []
+    try:
+        for page_number, page in enumerate(document, start=1):
+            selector = rule.get("selector", {})
+            if not page_matches(page, page_number, selector, len(document)):
+                continue
+            region = resolve_region(page, selector.get("region")) & page.rect
+            matches = find_matches(page, region, rule.get("match", {}))
+            for rect, text in matches:
+                total_count += 1
+                if len(items) < 500:
+                    items.append({"page": page_number, "text": text, "rect": list(rect)})
+                if sample_page_number is None:
+                    sample_page_number = page_number
+                if sample_page_number == page_number:
+                    sample_rects.append(rect)
+        sample: dict[str, Any] | None = None
+        if sample_page_number is not None:
+            page = document[sample_page_number - 1]
+            pixmap = page.get_pixmap(matrix=pymupdf.Matrix(1.25, 1.25), alpha=False)
+            sample = {
+                "page": sample_page_number,
+                "image": base64.b64encode(pixmap.tobytes("png")).decode("ascii"),
+                "markers": [{
+                    "x": rect.x0 / page.rect.width * 100,
+                    "y": rect.y0 / page.rect.height * 100,
+                    "width": rect.width / page.rect.width * 100,
+                    "height": rect.height / page.rect.height * 100,
+                } for rect in sample_rects[:100]],
+            }
+        pages = sorted({item["page"] for item in items})
+        return {"ok": True, "count": total_count, "pages": pages, "items": items, "sample": sample, "truncated": total_count > len(items)}
+    finally:
+        document.close()
+
+
 def process_job(job: dict[str, Any]) -> dict[str, Any]:
     input_pdf = Path(job["input_pdf"]).resolve()
     output_pdf = Path(job["output_pdf"]).resolve()
@@ -438,6 +571,7 @@ def process_job(job: dict[str, Any]) -> dict[str, Any]:
     document = pymupdf.open(input_pdf)
     operations: list[Operation] = []
     warnings: list[str] = []
+    page_operations, deferred_extracts = apply_page_operations(document, job.get("page_operations", []))
 
     for page_number, page in enumerate(document, start=1):
         for rule_index, rule in enumerate(job.get("rules", [])):
@@ -514,6 +648,7 @@ def process_job(job: dict[str, Any]) -> dict[str, Any]:
                 except Exception as exc:
                     warnings.append(f"Стр. {page_number}, {rule.get('name', 'логотип')}: {exc}")
 
+    extracted_files = save_extracts(document, deferred_extracts, output_pdf)
     page_count = len(document)
     document.save(output_pdf, garbage=4, deflate=True)
     document.close()
@@ -528,6 +663,8 @@ def process_job(job: dict[str, Any]) -> dict[str, Any]:
         "page_count": page_count,
         "operation_count": len(operations),
         "operations": [asdict(operation) for operation in operations],
+        "page_operations": page_operations,
+        "extracted_files": extracted_files,
         "warnings": warnings,
         "preview_dir": str(preview_dir) if preview_dir else None,
     }
