@@ -422,6 +422,25 @@ def find_matches(page: pymupdf.Page, region: pymupdf.Rect, match: dict[str, Any]
     match_type = match.get("type", "none")
     if match_type == "none":
         return [(region, "")]
+    if match_type == "region_content":
+        text = " ".join(page.get_text("text", clip=region).split())
+        return [(region, text)] if text or match.get("allow_empty", False) else []
+    if match_type == "stamp_values":
+        stamp = spds_region(page) & page.rect
+        if not stamp_role_fields(page, stamp):
+            return []
+        static_labels = {
+            "изм", "колуч", "лист", "док", "подп", "дата", "стадия", "листов", "формат",
+            "разработал", "проверил", "нконтр", "гип", "гап", "арх", "утв", "исполнил",
+            "составил", "наименование", "обозначение", "инв", "подл", "взам", "согласовано",
+            "подпись", "н", "контр", "нов", "зам", "аннул", "n", "кол", "уч",
+        }
+        result: list[tuple[pymupdf.Rect, str]] = []
+        for word in unique_words(page, region):
+            normalized = re.sub(r"[^а-яёa-z]", "", str(word[4]).casefold())
+            if normalized not in static_labels:
+                result.append((pymupdf.Rect(word[:4]), str(word[4])))
+        return result
     if match_type == "date_linked_name":
         years = {int(year) for year in match.get("years", [2022, 2023])}
         expected_name = str(match.get("text", "")).strip().casefold()
@@ -558,6 +577,46 @@ def inspect_rule(input_pdf: str, rule: dict[str, Any]) -> dict[str, Any]:
             }
         pages = sorted({item["page"] for item in items})
         return {"ok": True, "count": total_count, "pages": pages, "items": items, "sample": sample, "truncated": total_count > len(items)}
+    finally:
+        document.close()
+
+
+def inspect_page(input_pdf: str, page_number: int) -> dict[str, Any]:
+    """Render one page and expose clickable text spans for direct editing."""
+    document = pymupdf.open(Path(input_pdf).resolve())
+    try:
+        if not 1 <= page_number <= len(document):
+            raise ValueError(f"Страница {page_number} отсутствует; всего страниц: {len(document)}")
+        page = document[page_number - 1]
+        spans: list[dict[str, Any]] = []
+        for block in page.get_text("dict").get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = str(span.get("text", "")).strip()
+                    if not text:
+                        continue
+                    rect = pymupdf.Rect(span["bbox"])
+                    spans.append({
+                        "text": text,
+                        "rect": list(rect),
+                        "x": rect.x0 / page.rect.width * 100,
+                        "y": rect.y0 / page.rect.height * 100,
+                        "width": rect.width / page.rect.width * 100,
+                        "height": rect.height / page.rect.height * 100,
+                        "font": span.get("font", ""),
+                        "size": span.get("size", 9),
+                    })
+        pixmap = page.get_pixmap(matrix=pymupdf.Matrix(1.4, 1.4), alpha=False)
+        return {
+            "ok": True,
+            "page": page_number,
+            "page_count": len(document),
+            "width_mm": page.rect.width / MM,
+            "height_mm": page.rect.height / MM,
+            "image": base64.b64encode(pixmap.tobytes("png")).decode("ascii"),
+            "spans": spans[:2000],
+            "truncated": len(spans) > 2000,
+        }
     finally:
         document.close()
 

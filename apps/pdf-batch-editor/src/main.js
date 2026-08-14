@@ -9,13 +9,26 @@ const initialRules = clone(profile.rules).sort((left, right) => primaryRuleOrder
 const state = {
   input: "",
   inputs: [],
+  sourceFolder: "",
   output: "",
   outputDir: "",
   makePreviews: true,
   rules: initialRules,
   pageOperations: [],
   selected: Math.max(0, initialRules.findIndex((rule) => rule.id === "document-text")),
-  screen: "content",
+  screen: "task",
+  task: {
+    roleEnabled: true, role: "ГИП", oldRoleName: "", newRoleName: "",
+    organizationEnabled: true, oldOrganization: "", newOrganization: "",
+    textEnabled: false, oldText: "", newText: "",
+    clearStampEnabled: false, extractPages: "", extractSuffix: "выбранные-листы",
+  },
+  pageInspection: null,
+  pageInspecting: false,
+  directPage: 1,
+  directSelectedSpan: null,
+  directReplacement: "",
+  directAction: "replace",
   inspection: null,
   contentInspection: null,
   inspecting: false,
@@ -57,7 +70,9 @@ function render() {
         </div>
       </div>
       <nav class="tabs">
-        <button data-screen="content" class="${state.screen === "content" ? "active" : ""}">Содержание</button>
+        <button data-screen="task" class="${state.screen === "task" ? "active" : ""}">Задание</button>
+        <button data-screen="direct" class="${state.screen === "direct" ? "active" : ""}">Прямой редактор</button>
+        <button data-screen="content" class="${state.screen === "content" ? "active" : ""}">Правила</button>
         <button data-screen="stamp" class="${state.screen === "stamp" ? "active" : ""}">Штамп (профиль)</button>
         <button data-screen="pages" class="${state.screen === "pages" ? "active" : ""}">Страницы (доп.)</button>
       </nav>
@@ -70,11 +85,61 @@ function render() {
 
     <main>
       ${renderFiles()}
-      ${state.screen === "stamp" ? renderQuick() : state.screen === "pages" ? renderPages() : renderRules()}
+      ${state.screen === "task" ? renderTask() : state.screen === "direct" ? renderDirectEditor() : state.screen === "stamp" ? renderQuick() : state.screen === "pages" ? renderPages() : renderRules()}
       ${renderFooter()}
     </main>
     ${renderPreviewModal()}`;
   bindEvents();
+}
+
+function renderTask() {
+  const task = state.task;
+  return `
+    <section class="step-card">
+      <div class="step-heading"><span class="step-num">2</span><div><h2>Задание на комплект</h2><p>Типовые изменения применяются ко всем выбранным PDF. Исходные файлы не перезаписываются.</p></div></div>
+      <div class="task-grid task-main-grid">
+        ${taskFormCard("roleEnabled", "Ответственный в штампе", "Найти строку по роли и заменить фамилию", `
+          ${field("Роль", select("task.role", task.role, [["ГИП", "ГИП"], ["ГАП", "ГАП"], ["Разработал", "Разработал"], ["Проверил", "Проверил"], ["Н. контр.", "Н. контр."]]))}
+          ${field("Кого меняем", input("task.oldRoleName", task.oldRoleName), "Пусто — любой человек в выбранной роли")}
+          ${field("Новое значение", input("task.newRoleName", task.newRoleName, "text", 'placeholder="Например: Васильев"'))}`)}
+        ${taskFormCard("organizationEnabled", "Организация", "Заменить компанию в основной надписи", `
+          ${field("Старая", input("task.oldOrganization", task.oldOrganization), "Можно не указывать для стандартного штампа")}
+          ${field("Новая", `<textarea data-bind="task.newOrganization" rows="2" placeholder="ООО «Шаражмонтаж»">${esc(task.newOrganization)}</textarea>`)}`)}
+        ${taskFormCard("textEnabled", "Другой текст", "Пакетная замена по содержанию документа", `
+          ${field("Найти", `<textarea data-bind="task.oldText" rows="2">${esc(task.oldText)}</textarea>`)}
+          ${field("Заменить", `<textarea data-bind="task.newText" rows="2">${esc(task.newText)}</textarea>`)}`)}
+        ${taskFormCard("clearStampEnabled", "Обнулить штампы и выгрузить листы", "Очистить значения штампа, сохранить линии и извлечь нужные страницы", `
+          ${field("Листы", input("task.extractPages", task.extractPages), "Например: 2, 5-12")}
+          ${field("Имя выборки", input("task.extractSuffix", task.extractSuffix))}
+          <small class="danger-note">Очищаются значения полей основной надписи, но не рамка и не сетка таблицы.</small>`)}
+      </div>
+      <div class="task-hint"><strong>Нестандартный лист?</strong> Выберите надпись в «Прямом редакторе» либо проверьте совпадения в «Правилах».</div>
+    </section>`;
+}
+
+function taskFormCard(key, title, description, body) {
+  const enabled = Boolean(state.task[key]);
+  return `<article class="task-card ${enabled ? "enabled" : ""}"><label class="task-switch"><input data-task-toggle="${key}" type="checkbox" ${enabled ? "checked" : ""}><i></i><span><strong>${title}</strong><small>${description}</small></span></label><div class="task-body">${body}</div></article>`;
+}
+
+function renderDirectEditor() {
+  if (!state.input) return `<section class="step-card"><div class="stamp-empty"><strong>Сначала выберите PDF или папку проекта</strong><span>После этого можно нажать на любую текстовую надпись на листе.</span></div></section>`;
+  if (state.pageInspecting) return `<section class="step-card"><div class="stamp-empty"><strong>Открываю страницу ${state.directPage}…</strong><span>Извлекаю текстовые блоки и координаты.</span></div></section>`;
+  const page = state.pageInspection;
+  if (!page) return `<section class="step-card"><div class="stamp-empty error-box"><strong>Страница ещё не открыта</strong><span>Перейдите на другую вкладку и вернитесь либо выберите PDF заново.</span></div></section>`;
+  const selected = state.directSelectedSpan;
+  return `<section class="direct-layout">
+    <div class="step-card direct-canvas-card">
+      <div class="direct-toolbar"><strong>Лист ${page.page} из ${page.page_count}</strong><div><button id="direct-prev" class="secondary-btn" ${page.page <= 1 ? "disabled" : ""}>←</button><input id="direct-page-number" type="number" min="1" max="${page.page_count}" value="${page.page}"><button id="direct-next" class="secondary-btn" ${page.page >= page.page_count ? "disabled" : ""}>→</button></div></div>
+      <div class="direct-canvas"><img src="data:image/png;base64,${page.image}" alt="Страница ${page.page}">${page.spans.map((span, index) => `<button class="direct-span ${selected === index ? "selected" : ""}" data-direct-span="${index}" title="${esc(span.text)}" style="left:${span.x}%;top:${span.y}%;width:${Math.max(span.width, 0.5)}%;height:${Math.max(span.height, 0.5)}%"></button>`).join("")}</div>
+    </div>
+    <aside class="step-card direct-panel"><h2>Текстовый блок</h2>${selected === null ? `<p class="muted">Нажмите на нужную надпись на листе.</p>` : `
+      ${field("Сейчас", `<textarea readonly rows="3">${esc(page.spans[selected].text)}</textarea>`)}
+      ${field("Действие", select("direct.action", state.directAction, [["replace", "Заменить"], ["redact", "Удалить"]]))}
+      ${state.directAction === "replace" ? field("Новый текст", `<textarea data-bind="direct.replacement" rows="4">${esc(state.directReplacement)}</textarea>`) : ""}
+      <label class="plain-check"><input id="direct-all-files" type="checkbox"> Применить ко всему комплекту</label>
+      <button id="add-direct-rule" class="primary">Добавить в задание</button><small class="direct-note">Шрифт, кегль и цвет будут сохранены.</small>`}</aside>
+  </section>`;
 }
 
 function renderPages() {
@@ -126,7 +191,7 @@ function renderPageOperation(operation, index) {
 }
 
 function renderFiles() {
-  const packageLabel = state.inputs.length > 1 ? `${state.inputs.length} PDF файлов в пакете` : state.input ? shortPath(state.input) : "Нажмите для выбора PDF…";
+  const packageLabel = state.sourceFolder ? `${state.inputs.length} PDF из ${shortPath(state.sourceFolder)}` : state.inputs.length > 1 ? `${state.inputs.length} PDF файлов в пакете` : state.input ? shortPath(state.input) : "Выберите PDF или папку проекта…";
   const outputLabel = state.inputs.length > 1 ? (state.outputDir ? shortPath(state.outputDir) : "Выберите папку для сохранения…") : (state.output ? shortPath(state.output) : "Куда сохранить изменённый PDF…");
   return `
     <section class="step-card files-card">
@@ -138,10 +203,11 @@ function renderFiles() {
         </div>
       </div>
       <div class="file-pickers">
-        <button id="pick-input" class="file-picker ${state.input ? "chosen" : ""}">
+        <div class="file-picker source-picker ${state.input ? "chosen" : ""}">
           <span class="picker-label">Исходный файл / пакет</span>
           <strong>${packageLabel}</strong>
-        </button>
+          <div class="source-actions"><button id="pick-input">PDF-файлы…</button><button id="pick-folder">Папка проекта…</button></div>
+        </div>
         <span class="arrow">→</span>
         <button id="pick-output" class="file-picker ${(state.output || state.outputDir) ? "chosen" : ""}">
           <span class="picker-label">${state.inputs.length > 1 ? "Папка результатов" : "Выходной PDF"}</span>
@@ -351,7 +417,7 @@ function renderEditor(rule) {
       </section>
       <section>
         <h3><span class="num-badge">2</span> Что найти</h3>
-        ${field("Тип поиска", select("match.type", match.type, [["none", "Без поиска — вставка"], ["exact_text", "Точный текст"], ["regex_word", "Регулярное выражение"], ["date_linked_name", "Фамилия рядом с датой"]]))}
+        ${field("Тип поиска", select("match.type", match.type, [["none", "Без поиска — вставка"], ["exact_text", "Точный текст"], ["regex_word", "Регулярное выражение"], ["date_linked_name", "Ответственный в штампе"], ["region_content", "Содержимое выбранной области"], ["stamp_values", "Заполненные значения штампа"]]))}
         ${match.type === "date_linked_name" ? `
           ${field("Фамилия", input("match.text", match.text || ""), "Оставьте пустым для всех фамилий")}
           ${field("Годы дат", input("match.years", (match.years || [2022, 2023]).join(", ")))}
@@ -459,7 +525,7 @@ function shortPath(path) {
 }
 
 function humanSummary(rule) {
-  const match = { none: "вставка", exact_text: "точный текст", regex_word: "шаблон", date_linked_name: "фамилия у даты" }[rule.match.type] || rule.match.type;
+  const match = { none: "вставка", exact_text: "точный текст", regex_word: "шаблон", date_linked_name: "ответственный в штампе", region_content: "содержимое области", stamp_values: "заполнение штампа" }[rule.match.type] || rule.match.type;
   const action = { add: "добавить", replace: "заменить", redact: "стереть", add_image: "вставить картинку", replace_image: "заменить картинкой" }[rule.action.type] || rule.action.type;
   return `${match} → ${action}`;
 }
@@ -502,7 +568,11 @@ function applyPresetTZ() {
 }
 
 function bindEvents() {
-  document.querySelectorAll("[data-screen]").forEach((button) => button.onclick = () => { state.screen = button.dataset.screen; render(); });
+  document.querySelectorAll("[data-screen]").forEach((button) => button.onclick = async () => {
+    state.screen = button.dataset.screen;
+    render();
+    if (state.screen === "direct" && state.input && !state.pageInspection) await inspectDirectPage();
+  });
   document.querySelectorAll("[data-rule]").forEach((button) => button.onclick = () => { state.selected = Number(button.dataset.rule); state.contentInspection = null; render(); });
   document.querySelector("#apply-preset-tz")?.addEventListener("click", applyPresetTZ);
   document.querySelectorAll("[data-detected-name]").forEach((button) => button.onclick = () => {
@@ -524,7 +594,9 @@ function bindEvents() {
     if (id === "note-tch" && ruleById("note-gch")) ruleById("note-gch").enabled = element.checked;
     render();
   });
+  document.querySelectorAll("[data-task-toggle]").forEach((element) => element.onchange = () => { state.task[element.dataset.taskToggle] = element.checked; syncTaskRules(); render(); });
   document.querySelector("#pick-input")?.addEventListener("click", chooseInput);
+  document.querySelector("#pick-folder")?.addEventListener("click", chooseFolder);
   document.querySelector("#pick-output")?.addEventListener("click", chooseOutput);
   document.querySelector("#pick-font")?.addEventListener("click", chooseFont);
   document.querySelector("#pick-logo")?.addEventListener("click", () => chooseImage(ruleById("document-logo")));
@@ -547,12 +619,36 @@ function bindEvents() {
   document.querySelector("#open-previews-btn")?.addEventListener("click", () => { state.previewModalOpen = true; render(); });
   document.querySelector("#close-modal-btn")?.addEventListener("click", () => { state.previewModalOpen = false; render(); });
   document.querySelectorAll("[data-page]").forEach((btn) => btn.onclick = () => { state.selectedPreviewPage = Number(btn.dataset.page); render(); });
+  document.querySelectorAll("[data-direct-span]").forEach((button) => button.onclick = () => {
+    state.directSelectedSpan = Number(button.dataset.directSpan);
+    state.directReplacement = state.pageInspection.spans[state.directSelectedSpan].text;
+    state.directAction = "replace";
+    render();
+  });
+  document.querySelector("#direct-prev")?.addEventListener("click", () => changeDirectPage(state.directPage - 1));
+  document.querySelector("#direct-next")?.addEventListener("click", () => changeDirectPage(state.directPage + 1));
+  document.querySelector("#direct-page-number")?.addEventListener("change", (event) => changeDirectPage(Number(event.target.value)));
+  document.querySelector("#add-direct-rule")?.addEventListener("click", addDirectRule);
 }
 
 function updateBinding(element) {
   let value = element.type === "checkbox" ? element.checked : element.value;
   if (element.type === "number") value = Number(value);
   const bind = element.dataset.bind;
+  if (bind?.startsWith("task.")) {
+    state.task[bind.slice(5)] = value;
+    syncTaskRules();
+    return;
+  }
+  if (bind === "direct.action") {
+    state.directAction = value;
+    render();
+    return;
+  }
+  if (bind === "direct.replacement") {
+    state.directReplacement = value;
+    return;
+  }
   if (bind?.startsWith("pageop.")) {
     const [, indexText, property] = bind.split(".");
     state.pageOperations[Number(indexText)][property] = value;
@@ -634,15 +730,148 @@ async function inspectSelectedRule() {
   }
 }
 
+function syncTaskRules() {
+  const task = state.task;
+  const roleRule = ruleById("stamp-surnames");
+  if (roleRule) {
+    roleRule.enabled = task.roleEnabled && Boolean(task.newRoleName.trim());
+    roleRule.match.type = "date_linked_name";
+    roleRule.match.role = task.role;
+    roleRule.match.text = task.oldRoleName.trim();
+    roleRule.selector.pages = "all";
+    roleRule.action.text = task.newRoleName.trim();
+  }
+  const organizationRule = ruleById("stamp-organization");
+  if (organizationRule) {
+    organizationRule.enabled = task.organizationEnabled && Boolean(task.newOrganization.trim());
+    organizationRule.match.type = task.oldOrganization.trim() ? "exact_text" : "region_content";
+    organizationRule.match.text = task.oldOrganization.trim();
+    organizationRule.action.text = task.newOrganization.trim();
+  }
+  const textRule = ruleById("document-text");
+  if (textRule) {
+    textRule.enabled = task.textEnabled && Boolean(task.oldText.trim());
+    textRule.match.type = "exact_text";
+    textRule.match.text = task.oldText.trim();
+    textRule.action.type = "replace";
+    textRule.action.text = task.newText;
+  }
+  let clearRule = ruleById("task-clear-stamp");
+  if (!clearRule) {
+    clearRule = {
+      id: "task-clear-stamp", name: "Обнулить заполнение штампа", enabled: false,
+      selector: { pages: "all", orientation: "any", document_kind: "any", region: { anchor: "spds_title_block", x_mm: 0, y_mm: 0, width_mm: 185, height_mm: 55 } },
+      match: { type: "stamp_values" },
+      action: { type: "redact", style: { background: "#FFFFFF" } },
+    };
+    state.rules.push(clearRule);
+  }
+  clearRule.enabled = task.clearStampEnabled;
+  clearRule.selector.pages = task.extractPages.trim() || "all";
+  const extractionId = "task-extract-pages";
+  const extractionIndex = state.pageOperations.findIndex((operation) => operation.id === extractionId);
+  if (task.clearStampEnabled && task.extractPages.trim()) {
+    const extraction = { id: extractionId, type: "extract", pages: task.extractPages.trim(), suffix: task.extractSuffix.trim() || "выбранные-листы", angle: 90, source_pdf: "", position: "end" };
+    if (extractionIndex >= 0) state.pageOperations[extractionIndex] = extraction;
+    else state.pageOperations.push(extraction);
+  } else if (extractionIndex >= 0) {
+    state.pageOperations.splice(extractionIndex, 1);
+  }
+}
+
+async function inspectDirectPage() {
+  if (!state.input) return;
+  state.pageInspecting = true;
+  state.directSelectedSpan = null;
+  render();
+  try {
+    const output = await invoke("run_engine", { args: ["--inspect-page-json", JSON.stringify({ input_pdf: state.input, page: state.directPage })] });
+    const result = JSON.parse(output.stdout.trim().split(/\r?\n/).at(-1) || output.stderr);
+    if (!result.ok) throw new Error(result.error || "Не удалось открыть страницу");
+    state.pageInspection = result;
+    state.directPage = result.page;
+  } catch (error) {
+    state.pageInspection = null;
+    state.message = `Ошибка прямого редактора: ${error.message || error}`;
+    state.messageType = "error";
+  } finally {
+    state.pageInspecting = false;
+    render();
+  }
+}
+
+async function changeDirectPage(pageNumber) {
+  const maximum = state.pageInspection?.page_count || 1;
+  state.directPage = Math.max(1, Math.min(maximum, Number(pageNumber) || 1));
+  await inspectDirectPage();
+}
+
+function addDirectRule() {
+  const span = state.pageInspection?.spans[state.directSelectedSpan];
+  if (!span) return;
+  const pointsToMm = 25.4 / 72;
+  const allFiles = document.querySelector("#direct-all-files")?.checked;
+  const template = profile.rules.find((rule) => rule.id === "document-text") || profile.rules[0];
+  const rule = clone(template);
+  rule.id = `direct-${Date.now()}`;
+  rule.name = `${state.directAction === "redact" ? "Удалить" : "Заменить"}: ${span.text.slice(0, 40)}`;
+  rule.enabled = true;
+  rule.selector.pages = allFiles ? "all" : String(state.directPage);
+  rule.selector.orientation = "any";
+  rule.selector.document_kind = "any";
+  rule.selector.region = {
+    anchor: "page",
+    x_mm: Math.max(0, span.rect[0] * pointsToMm - 1),
+    y_mm: Math.max(0, span.rect[1] * pointsToMm - 1),
+    width_mm: (span.rect[2] - span.rect[0]) * pointsToMm + 2,
+    height_mm: (span.rect[3] - span.rect[1]) * pointsToMm + 2,
+  };
+  rule.match = { type: "exact_text", text: span.text };
+  rule.action.type = state.directAction;
+  rule.action.text = state.directAction === "replace" ? state.directReplacement : "";
+  rule.action.style.preserve_source_style = true;
+  state.rules.push(rule);
+  state.selected = state.rules.length - 1;
+  state.message = `Операция добавлена: ${rule.name}.`;
+  state.messageType = "success";
+  state.screen = "content";
+  render();
+}
+
 async function chooseInput() {
   const selected = await open({ multiple: true, filters: [{ name: "PDF", extensions: ["pdf"] }] });
   if (selected) {
     state.inputs = Array.isArray(selected) ? selected : [selected];
+    state.sourceFolder = "";
     state.input = state.inputs[0];
     state.output = state.input.replace(/\.pdf$/i, "_изменён.pdf");
     state.outputDir = state.inputs.length > 1 ? parentPath(state.input) : "";
-    state.screen = "content";
+    state.pageInspection = null;
+    state.directPage = 1;
+    state.screen = "task";
     await inspectInput();
+  }
+}
+
+async function chooseFolder() {
+  const folder = await open({ directory: true, multiple: false });
+  if (!folder) return;
+  try {
+    const files = await invoke("list_pdf_files", { folder });
+    if (!files.length) throw new Error("В выбранной папке и подпапках нет PDF");
+    state.sourceFolder = folder;
+    state.inputs = files;
+    state.input = files[0];
+    state.output = "";
+    state.outputDir = joinPath(folder, "Результат");
+    state.pageInspection = null;
+    state.directPage = 1;
+    state.screen = "task";
+    await inspectInput();
+  } catch (error) {
+    state.message = `Не удалось открыть папку: ${error.message || error}`;
+    state.messageType = "error";
+    render();
   }
 }
 
