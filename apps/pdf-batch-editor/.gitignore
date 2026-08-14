@@ -1,0 +1,14 @@
+node_modules/
+.venv/
+dist/
+sidecar-build/
+sidecar-dist/
+engine/__pycache__/
+*.pyc
+src-tauri/binaries/*.exe
+src-tauri/target/
+src-tauri/gen/
+tmp/
+*.pdf
+*.report.json
+*_preview/
