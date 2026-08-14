@@ -4,15 +4,17 @@ import profile from "../profiles/spds_stamp_mvp.json";
 import "./styles.css";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const primaryRuleOrder = ["document-text", "document-logo", "stamp-surnames", "stamp-organization", "note-tch", "note-gch"];
+const initialRules = clone(profile.rules).sort((left, right) => primaryRuleOrder.indexOf(left.id) - primaryRuleOrder.indexOf(right.id));
 const state = {
   input: "",
   inputs: [],
   output: "",
   outputDir: "",
   makePreviews: true,
-  rules: clone(profile.rules),
+  rules: initialRules,
   pageOperations: [],
-  selected: Math.max(0, profile.rules.findIndex((rule) => rule.id === "document-text")),
+  selected: Math.max(0, initialRules.findIndex((rule) => rule.id === "document-text")),
   screen: "content",
   inspection: null,
   contentInspection: null,
@@ -50,14 +52,14 @@ function render() {
       <div class="brand">
         <div class="brand-mark">PDF</div>
         <div>
-          <h1>Редактор проектной документации</h1>
-          <p>Поиск, замена и сборка PDF-комплектов</p>
+          <h1>Редактор содержания PDF</h1>
+          <p>Поиск и корректировка проектной документации</p>
         </div>
       </div>
       <nav class="tabs">
-        <button data-screen="content" class="${state.screen === "content" ? "active" : ""}">Содержимое</button>
-        <button data-screen="pages" class="${state.screen === "pages" ? "active" : ""}">Страницы</button>
-        <button data-screen="stamp" class="${state.screen === "stamp" ? "active" : ""}">Штамп СПДС</button>
+        <button data-screen="content" class="${state.screen === "content" ? "active" : ""}">Содержание</button>
+        <button data-screen="stamp" class="${state.screen === "stamp" ? "active" : ""}">Штамп (профиль)</button>
+        <button data-screen="pages" class="${state.screen === "pages" ? "active" : ""}">Страницы (доп.)</button>
       </nav>
       <div class="profile-menu">
         <button id="apply-preset-tz" class="preset-btn" title="Загрузить параметры базового задания">⚡ Базовое задание</button>
@@ -287,6 +289,16 @@ function quickTask(id, title, description, body) {
 function renderRules() {
   const rule = selectedRule();
   return `
+    <section class="step-card content-intro">
+      <div class="step-heading">
+        <span class="step-num">2</span>
+        <div>
+          <h2>Что нужно изменить в содержании</h2>
+          <p>Найдите текст или объект, проверьте совпадения на листах и выберите действие: заменить, удалить или добавить.</p>
+        </div>
+        <button id="add-rule-top" class="primary compact-primary">+ Новая операция</button>
+      </div>
+    </section>
     <section class="rules-workspace">
       <aside class="rules-list step-card">
         <div class="rules-title">
@@ -523,6 +535,7 @@ function bindEvents() {
   document.querySelector("#import-profile")?.addEventListener("click", importProfile);
   document.querySelector("#export-profile")?.addEventListener("click", exportProfile);
   document.querySelector("#add-rule")?.addEventListener("click", addRule);
+  document.querySelector("#add-rule-top")?.addEventListener("click", addRule);
   document.querySelector("#duplicate-rule")?.addEventListener("click", duplicateRule);
   document.querySelector("#delete-rule")?.addEventListener("click", deleteRule);
   document.querySelector("#add-page-operation")?.addEventListener("click", addPageOperation);
@@ -689,9 +702,15 @@ async function chooseImage(rule) {
 }
 
 function addRule() {
-  const fresh = clone(profile.rules[0]);
+  const template = ruleById("document-text") || profile.rules.find((rule) => rule.id === "document-text") || profile.rules[0];
+  const fresh = clone(template);
   fresh.id = `rule-${Date.now()}`;
-  fresh.name = "Новое правило";
+  fresh.name = "Новая операция с содержанием";
+  fresh.enabled = true;
+  fresh.selector.pages = "all";
+  fresh.selector.orientation = "any";
+  fresh.selector.document_kind = "any";
+  fresh.selector.region = { anchor: "page", x_mm: 0, y_mm: 0, width_mm: 1000, height_mm: 1000 };
   fresh.match = { type: "exact_text", text: "" };
   fresh.action.text = "";
   state.rules.push(fresh);

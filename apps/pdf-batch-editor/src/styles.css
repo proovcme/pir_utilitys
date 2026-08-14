@@ -169,6 +169,19 @@ main {
   white-space: nowrap;
 }
 
+.content-intro .step-heading {
+  margin-bottom: 0;
+}
+
+.content-intro .primary {
+  margin-left: auto;
+}
+
+.compact-primary {
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
 .operation-list {
   display: grid;
   gap: 10px;
